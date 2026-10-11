@@ -335,6 +335,50 @@ const DEPS_SCRIPT: string = [
   'io.open(out, \'w\', encoding=\'utf-8\').write(chr(10).join(rows) if rows else \'(未发现已安装包)\')',
 ].join('\n');
 
+/** 工程级 ast 扫描（跨文件）：查符号的定义与用法，或列出全工程的类 */
+const PROJECT_AST_SCRIPT: string = [
+  'import ast, io, os, sys',
+  'root = sys.argv[1]',
+  'out = sys.argv[2]',
+  'symbol = sys.argv[3] if len(sys.argv) > 3 else ""',
+  'rows = []',
+  'files = []',
+  'for dirpath, dirnames, filenames in os.walk(root):',
+  '    for fn in filenames:',
+  '        if fn.endswith(".py"):',
+  '            files.append(os.path.join(dirpath, fn))',
+  'files.sort()',
+  'for path in files:',
+  '    rel = os.path.relpath(path, root)',
+  '    try:',
+  '        text = io.open(path, encoding="utf-8").read()',
+  '        tree = ast.parse(text)',
+  '    except Exception:',
+  '        continue',
+  '    src_lines = text.splitlines()',
+  '    if symbol:',
+  '        for node in ast.walk(tree):',
+  '            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == symbol:',
+  '                rows.append("定义  %s:%d   %s" % (rel, node.lineno, src_lines[node.lineno - 1].strip()))',
+  '        for node in ast.walk(tree):',
+  '            hit = False',
+  '            if isinstance(node, ast.Name) and node.id == symbol and isinstance(node.ctx, ast.Load):',
+  '                hit = True',
+  '            elif isinstance(node, ast.Attribute) and node.attr == symbol:',
+  '                hit = True',
+  '            if hit and node.lineno <= len(src_lines):',
+  '                rows.append("用法  %s:%d   %s" % (rel, node.lineno, src_lines[node.lineno - 1].strip()))',
+  '    else:',
+  '        for node in ast.walk(tree):',
+  '            if isinstance(node, ast.ClassDef):',
+  '                bases = [b.id for b in node.bases if isinstance(b, ast.Name)]',
+  '                rows.append("类  %s  %s:%d   基类 %s" % (node.name, rel, node.lineno, ", ".join(bases) if bases else "(无)"))',
+  '            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):',
+  '                if not node.name.startswith("__"):',
+  '                    rows.append("函数  %s  %s:%d" % (node.name, rel, node.lineno))',
+  'io.open(out, "w", encoding="utf-8").write(chr(10).join(rows) if rows else "(未找到)")',
+].join('\n');
+
 const SE_ACTIONS: string[] = [
   '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy', '查找用法|edit.findUsages', '变更时间线|vcs.fileHistory', '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active',
   '循环补全|ed.hippieComplete', '补全语句|ed.completeStatement',
@@ -493,6 +537,9 @@ struct Index {
   /** Evaluate（PyCharm）：输入表达式 + 求值历史 */
   @State evalText: string = '';
   @State debugEvals: string[] = [];
+  /** 全工程符号（类/函数 + 所在文件行）*/
+  @State projectSymbols: string[] = [];
+
   /** 继承层级（ast 版）：类/基类/方法/继承来的方法 */
   @State astHierRows: string[] = [];
 
@@ -2287,6 +2334,20 @@ struct Index {
       : '当前文件没有类定义');
   }
 
+  /** 全工程符号列表（跨文件）：类与函数，附所在文件与行号 */
+  private async loadProjectSymbols(): Promise<void> {
+    const dir: string = `${FileService.context().filesDir}/.harmonyide`;
+    FileService.ensureDir(dir);
+    FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
+    const script: string = `${dir}/ast_project.py`;
+    const out: string = `${this.projectRoot}/.harmonyide/project_symbols.txt`;
+    FileService.writeText(script, PROJECT_AST_SCRIPT);
+    const txt: string = await this.runPyAndRead(script, [this.projectRoot, out], out);
+    const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : [];
+    this.projectSymbols = rows;
+    this.setStatus(`全工程符号：${rows.length} 个（ast 跨文件）`);
+  }
+
   /** 查找用法（PyCharm 的 Find Usages）：用 ast 列出该符号的每一处引用 */
   private async findUsages(symbol: string): Promise<void> {
     const file: string = this.editorFilePath;
@@ -2297,15 +2358,15 @@ struct Index {
     const dir: string = `${FileService.context().filesDir}/.harmonyide`;
     FileService.ensureDir(dir);
     FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
-    const script: string = `${dir}/ast_scope.py`;
+    const script: string = `${dir}/ast_project.py`;
     const out: string = `${this.projectRoot}/.harmonyide/usages.txt`;
-    FileService.writeText(script, SCOPE_AST_SCRIPT);
-    this.setStatus(`正在查找 ${symbol} 的用法…`);
-    const txt: string = await this.runPyAndRead(script, [file, out, symbol], out);
+    FileService.writeText(script, PROJECT_AST_SCRIPT);
+    this.setStatus(`正在全工程查找 ${symbol} 的定义与用法…`);
+    const txt: string = await this.runPyAndRead(script, [this.projectRoot, out, symbol], out);
     const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : ['(无用法)'];
     this.usagesSymbol = symbol;
     this.usagesRows = rows;
-    this.dialogTitle = `查找用法：${symbol}（${rows.length} 处）`;
+    this.dialogTitle = `查找用法（全工程）：${symbol}（${rows.length} 处）`;
     this.dialog = 'usages';
     this.setStatus(`${symbol} 的用法：${rows.length} 处`);
   }
@@ -5061,8 +5122,9 @@ struct Index {
     if (action === 'edit.findUsages' || action === 'edit.usages') {
       this.usagesSymbol = '';
       this.usagesRows = [];
-      this.dialogTitle = '查找用法';
+      this.dialogTitle = '查找用法（全工程）';
       this.dialog = 'usages';
+      this.loadProjectSymbols();
       return;
     }
     if (action === 'vcs.fileHistory' || action === 'vcs.log' || action === 'vcs.showHistory') {
@@ -10115,13 +10177,13 @@ if (this.settings.showBottomToolWindow) {
   UsagesContent() {
     Column() {
       if (this.usagesRows.length === 0) {
-        Text('点一个符号查看它的用法')
+        Text(this.projectSymbols.length > 0 ? '点一个符号 → 全工程查找它的定义与用法' : '点一个符号查看它的用法')
           .fontSize(11.5)
           .fontColor(this.theme.textDisabled)
           .padding({ left: 8, top: 2, bottom: 4 })
         Scroll() {
           Column() {
-            ForEach(this.liveStructure, (row: string, index: number) => {
+            ForEach(this.projectSymbols.length > 0 ? this.projectSymbols : this.liveStructure, (row: string, index: number) => {
               Text(row)
                 .fontSize(12)
                 .fontFamily(PyFont.mono)
@@ -10129,10 +10191,14 @@ if (this.settings.showBottomToolWindow) {
                 .width('100%')
                 .height(26)
                 .padding({ left: 8, right: 8 })
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .onClick(() => {
-                  const m: RegExpMatchArray | null = row.match(/([A-Za-z_][A-Za-z0-9_]*)\s+L\d+/);
-                  if (m !== null) {
-                    this.findUsages(m[1]);
+                  const m: RegExpMatchArray | null = row.match(/(?:类|函数)\s+([A-Za-z_][A-Za-z0-9_]*)/);
+                  const m2: RegExpMatchArray | null = row.match(/([A-Za-z_][A-Za-z0-9_]*)\s+L\d+/);
+                  const name: string = m !== null ? m[1] : (m2 !== null ? m2[1] : '');
+                  if (name.length > 0) {
+                    this.findUsages(name);
                   }
                 })
             }, (row: string, index: number) => `fu_${index}_${row}`)

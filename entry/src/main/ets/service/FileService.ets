@@ -398,11 +398,17 @@ export class FileService {
   static createSampleProject(root: string): void {
     FileService.ensureDir(root);
     const mainPy: string = `${root}/main.py`;
-    if (!FileService.exists(mainPy)) {
+    // 示例工程升级：早期版本的 main.py 没有 import utils（缺少跨文件引用样本），发现即重写
+    if (FileService.exists(mainPy) && FileService.readText(mainPy).indexOf('import utils') < 0) {
+      FileService.writeText(mainPy, '');
+    }
+    if (!FileService.exists(mainPy) || FileService.readText(mainPy).length === 0) {
       FileService.writeText(mainPy, [
         '"""鸿蒙 Python IDE 示例工程。"""',
         'import sys',
         'import platform',
+        '',
+        'import utils',
         '',
         '',
         'def greet(name: str) -> str:',
@@ -414,6 +420,7 @@ export class FileService {
         '    print("Python :", sys.version.split()[0])',
         '    print("平台   :", sys.platform, platform.machine())',
         '    print("演示计算:", sum(i * i for i in range(1, 11)))',
+        '    print("斐波那契:", utils.fib(8))',
         '',
         '',
         'if __name__ == "__main__":',
