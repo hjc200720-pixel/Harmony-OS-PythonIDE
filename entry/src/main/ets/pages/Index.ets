@@ -7432,12 +7432,24 @@ if (this.settings.showBottomToolWindow) {
               }
             })
             .gesture(
-              LongPressGesture({ repeat: false })
-                .onAction(() => {
-                  this.tabMenuX = 320;
-                  this.tabMenuY = Math.max(8, Math.min(300, this.windowHeight - 568));
-                  this.tabMenuShown = true;
-                })
+              GestureGroup(GestureMode.Parallel,
+                LongPressGesture({ repeat: false })
+                  .onAction(() => {
+                    this.tabMenuX = 320;
+                    this.tabMenuY = Math.max(8, Math.min(300, this.windowHeight - 568));
+                    this.tabMenuShown = true;
+                  }),
+                // PyCharm：把标签拖向编辑区边缘会弹出 SplitChooser（这里简化为"拖拽一定距离即弹出"）
+                // 向下拖（把标签拖进编辑区）→ 弹 SplitChooser。
+                // 注意：标签栏自身是横向 Scroll，横向拖会被它吃掉，必须用纵向手势
+                PanGesture({ direction: PanDirection.Vertical, distance: 60 })
+                  .onActionEnd((event: GestureEvent) => {
+                    if (event.offsetY > 60) {
+                      this.dialogTitle = '拆分编辑器';
+                      this.dialog = 'splitChooser';
+                    }
+                  })
+              )
             )
           }, (tab: EditorTab) => `${tab.id}_${tab.dirty}`)
         }
@@ -7805,7 +7817,9 @@ if (this.settings.showBottomToolWindow) {
             this.RecentFilesContent()
           } else if (this.dialog === 'findInFiles') {
             this.FindInFilesContent()
-          } else if (this.dialog === 'gotoClass') {
+          } else if (this.dialog === 'splitChooser') {
+      this.SplitChooserContent()
+    } else if (this.dialog === 'gotoClass') {
       this.ClassesContent()
     } else if (this.dialog === 'gotoSymbol') {
       this.SymbolsContent()
@@ -8805,6 +8819,48 @@ if (this.settings.showBottomToolWindow) {
         .borderRadius(4)
         .backgroundColor(this.theme.buttonPrimaryBg)
         .onClick(() => this.reinitRuntime())
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** SplitChooser.Actions（PyCharm 拖拽标签时弹出的拆分选择器） */
+  @Builder
+  SplitChooserContent() {
+    Column() {
+      ForEach(['向右拆分|h|false', '向下拆分|v|false', '向左拆分|h|true', '向上拆分|v|true',
+        '居中拆分|h|center', '取消拆分|none|false', '全部取消拆分|all|false'], (spec: string) => {
+        Row() {
+          Text(spec.split('|')[0])
+            .fontSize(12.5)
+            .fontColor(this.theme.textPrimary)
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(26)
+        .padding({ left: 8, right: 8 })
+        .onClick(() => {
+          const parts: string[] = spec.split('|');
+          const dir: string = parts[1];
+          const flag: string = parts[2];
+          this.dialog = '';
+          if (flag === 'all') {
+            this.unsplitEditor(true);
+          } else if (flag === 'center') {
+            this.splitEditor(dir, false, 0.5);
+          } else if (flag === 'true') {
+            this.splitEditor(dir, true);
+          } else {
+            this.splitEditor(dir);
+          }
+        })
+      }, (spec: string) => `sc_${spec}`)
+      Divider().strokeWidth(1).color(this.theme.separator).margin({ top: 4, bottom: 4 })
+      // PyCharm SplitChooser 里还有 Group Tabs / Move to Opposite Group / Next Window / Previous Window
+      Text('标签分组 / 移到相反组 / 下一窗口 / 上一窗口：请用标签右键菜单（本选择器只做拆分）')
+        .fontSize(11)
+        .fontColor(this.theme.textDisabled)
+        .padding({ left: 8, right: 8, bottom: 4 })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
