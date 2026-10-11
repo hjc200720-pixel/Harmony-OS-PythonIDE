@@ -129,9 +129,13 @@ export struct ConsolePanelView {
   @Prop evalText: string = '';
   @Prop debugEvals: string[] = [];
   onEvalText: (value: string) => void = () => {};
-  /** 变量 [[名, 值]]，点击某行即对该变量求值（无需输入）*/
+  /** 变量 [[名, 值]]，点击某行 = 加入监视（PyCharm 的 watch 交互）*/
   @Prop debugLocals: string[][] = [];
   evalVar: (name: string) => void = () => {};
+  /** Watches（监视表达式）：表达式与最近一次求值结果（并行数组）*/
+  @Prop watches: string[] = [];
+  @Prop watchValues: string[] = [];
+  removeWatch: (name: string) => void = () => {};
   evalDebug: () => void = () => {};
   @Prop running: boolean = false;
   @Prop replPrompt: string = '>>> ';
@@ -609,6 +613,34 @@ export struct ConsolePanelView {
                 }
               })
             }, (pair: string[], index: number) => `lv_${index}_${pair.join('|')}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        if (this.watches.length > 0) {
+          Column() {
+            Text('监视')
+              .fontSize(11.5)
+              .fontColor(this.theme.textDisabled)
+              .padding({ left: 16, top: 4 })
+            ForEach(this.watches, (expr: string, index: number) => {
+              Row() {
+                Text(`${expr} = ${index < this.watchValues.length ? this.watchValues[index] : '…'}`)
+                  .fontSize(12)
+                  .fontFamily(PyFont.mono)
+                  .fontColor(this.theme.debugAccent)
+                  .layoutWeight(1)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                Text('移除')
+                  .fontSize(11)
+                  .fontColor(this.theme.textDisabled)
+                  .padding({ left: 8, right: 12 })
+                  .onClick(() => this.removeWatch(expr))
+              }
+              .width('100%')
+              .padding({ left: 16, right: 8, top: 2, bottom: 2 })
+            }, (expr: string, index: number) => `w_${index}_${expr}`)
           }
           .width('100%')
           .alignItems(HorizontalAlign.Start)

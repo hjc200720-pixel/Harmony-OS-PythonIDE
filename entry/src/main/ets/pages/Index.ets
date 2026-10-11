@@ -408,6 +408,9 @@ struct Index {
   /** Evaluate（PyCharm）：输入表达式 + 求值历史 */
   @State evalText: string = '';
   @State debugEvals: string[] = [];
+  /** Watches（监视表达式）：表达式 + 最近一次求值结果 */
+  @State watches: string[] = [];
+  @State watchValues: string[] = [];
   /** 「在文件中查找」结果（path:line: text） */
   @State searchResults: string[] = [];
   /** 视图菜单的显示开关（对应 PyCharm 的 View → Appearance 一组） */
@@ -3847,6 +3850,20 @@ struct Index {
       const next: string[] = this.debugEvals.slice();
       next.push(`${pause.evalExpr} = ${pause.evalResult}`);
       this.debugEvals = next;
+      // 若是监视表达式的求值结果，回填到 Watches
+      const wi: number = this.watches.indexOf(pause.evalExpr);
+      if (wi >= 0) {
+        const vals: string[] = this.watchValues.slice();
+        while (vals.length <= wi) {
+          vals.push('');
+        }
+        vals[wi] = pause.evalResult;
+        this.watchValues = vals;
+      }
+    }
+    // 每次暂停后刷新所有监视表达式
+    for (const w of this.watches) {
+      PyRuntimeService.sendDebugCommand(`eval:${w}`);
     }
     this.debugPaused = true;
     this.debugFile = pause.file;
@@ -6403,7 +6420,31 @@ struct Index {
                   },
                   evalDebug: () => this.evalDebug(),
                   debugLocals: this.debugLocals,
+                  watches: this.watches,
+                  watchValues: this.watchValues,
+                  removeWatch: (name: string) => {
+                    const i: number = this.watches.indexOf(name);
+                    if (i >= 0) {
+                      const w2: string[] = this.watches.slice();
+                      const v2: string[] = this.watchValues.slice();
+                      w2.splice(i, 1);
+                      if (i < v2.length) {
+                        v2.splice(i, 1);
+                      }
+                      this.watches = w2;
+                      this.watchValues = v2;
+                    }
+                  },
                   evalVar: (name: string) => {
+                    // 点变量行 = 加入监视（并立即求值一次）
+                    if (this.watches.indexOf(name) < 0) {
+                      const w3: string[] = this.watches.slice();
+                      w3.push(name);
+                      const v3: string[] = this.watchValues.slice();
+                      v3.push('…');
+                      this.watches = w3;
+                      this.watchValues = v3;
+                    }
                     this.evalText = name;
                     this.evalDebug();
                   },
@@ -6638,7 +6679,31 @@ if (this.settings.showBottomToolWindow) {
                   },
                   evalDebug: () => this.evalDebug(),
                   debugLocals: this.debugLocals,
+                  watches: this.watches,
+                  watchValues: this.watchValues,
+                  removeWatch: (name: string) => {
+                    const i: number = this.watches.indexOf(name);
+                    if (i >= 0) {
+                      const w2: string[] = this.watches.slice();
+                      const v2: string[] = this.watchValues.slice();
+                      w2.splice(i, 1);
+                      if (i < v2.length) {
+                        v2.splice(i, 1);
+                      }
+                      this.watches = w2;
+                      this.watchValues = v2;
+                    }
+                  },
                   evalVar: (name: string) => {
+                    // 点变量行 = 加入监视（并立即求值一次）
+                    if (this.watches.indexOf(name) < 0) {
+                      const w3: string[] = this.watches.slice();
+                      w3.push(name);
+                      const v3: string[] = this.watchValues.slice();
+                      v3.push('…');
+                      this.watches = w3;
+                      this.watchValues = v3;
+                    }
                     this.evalText = name;
                     this.evalDebug();
                   },
