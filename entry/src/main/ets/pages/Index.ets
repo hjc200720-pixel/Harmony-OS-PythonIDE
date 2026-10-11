@@ -251,8 +251,36 @@ const PROJECT_COLORS: ProjectColor[] = [
 ];
 
 /** 随处搜索（SearchEverywhere）的"操作"栏：label|actionId */
+/** 作用域视图用的 ast 解析脚本（运行时执行，结果写文件） */
+const SCOPE_AST_SCRIPT: string = [
+  'import ast, io, sys',
+  'src = sys.argv[1]',
+  'out = sys.argv[2]',
+  'text = io.open(src, encoding=\'utf-8\').read()',
+  'rows = []',
+  'def add(kind, name, line, depth, extra):',
+  '    rows.append((\'  \' * depth) + kind + \' \' + name + \'   L\' + str(line) + (\'   \' + extra if extra else \'\'))',
+  'def walk(node, depth):',
+  '    for child in ast.iter_child_nodes(node):',
+  '        if isinstance(child, ast.ClassDef):',
+  '            bases = [b.id for b in child.bases if isinstance(b, ast.Name)]',
+  '            add(\'类\', child.name, child.lineno, depth, (\'继承 \' + \',\'.join(bases)) if bases else \'\')',
+  '            walk(child, depth + 1)',
+  '        elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):',
+  '            nassign = len([n for n in child.body if isinstance(n, (ast.Assign, ast.AnnAssign))])',
+  '            ncalls = len([n for n in ast.walk(child) if isinstance(n, ast.Call)])',
+  '            args = [a.arg for a in child.args.args]',
+  '            add(\'函数\', child.name, child.lineno, depth, \'参数 %d · 局部赋值 %d · 调用 %d\' % (len(args), nassign, ncalls))',
+  '            walk(child, depth + 1)',
+  '        else:',
+  '            walk(child, depth)',
+  'add(\'模块\', src.split(\'/\')[-1], 1, 0, \'总行 %d\' % len(text.splitlines()))',
+  'walk(ast.parse(text), 1)',
+  'io.open(out, \'w\', encoding=\'utf-8\').write(chr(10).join(rows))',
+].join('\n');
+
 const SE_ACTIONS: string[] = [
-  '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
+  '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
   '循环补全|ed.hippieComplete', '补全语句|ed.completeStatement',
   '撤销|edit.undo', '重做|edit.redo', '全部保存|file.saveAll',
   '在文件中查找|edit.findInFiles', '随处搜索|edit.searchEverywhere', '转到行|nav.gotoLine',
@@ -409,6 +437,9 @@ struct Index {
   /** Evaluate（PyCharm）：输入表达式 + 求值历史 */
   @State evalText: string = '';
   @State debugEvals: string[] = [];
+  /** 作用域视图（ScopeView）：AST 解析出的作用域树行 */
+  @State scopeRows: string[] = [];
+
   /** 图表（Graph/Neighborhood）：节点与边 + Canvas 上下文 */
   @State graphNodes: string[] = [];
   @State graphEdges: string[] = [];
@@ -1994,6 +2025,32 @@ struct Index {
         ctx.fillText(nodes[i], p[0] + 10 * z, p[1] + 22 * z);
       }
     }
+  }
+
+  /** 作用域视图（ScopeView）：把当前文件交给运行时用 ast 真解析，结果写文件后读回 */
+  private async openScopeView(): Promise<void> {
+    const file: string = this.editorFilePath;
+    if (file.length === 0) {
+      this.showToast('当前没有打开的文件');
+      return;
+    }
+    const dir: string = `${FileService.context().filesDir}/.harmonyide`;
+    FileService.ensureDir(dir);
+    const script: string = `${dir}/ast_scope.py`;
+    const out: string = `${this.projectRoot}/.harmonyide/scope.txt`;
+    FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
+    FileService.writeText(script, SCOPE_AST_SCRIPT);
+    this.setStatus('正在解析作用域（ast）…');
+    try {
+      await PyRuntimeService.run(script, [file, out]);
+    } catch (e) {
+      FileService.log('scope ast run failed');
+    }
+    const txt: string = FileService.exists(out) ? FileService.readText(out) : '';
+    this.scopeRows = txt.trim().length > 0 ? txt.split('\n') : ['（解析失败：运行时未就绪或语法错误）'];
+    this.dialogTitle = `作用域视图：${file.substring(file.lastIndexOf('/') + 1)}（${this.scopeRows.length} 项）`;
+    this.dialog = 'scope';
+    this.setStatus(`作用域视图：${this.scopeRows.length} 项（AST 解析）`);
   }
 
   /** 点图表节点 → 跳到该符号的源码定义（PyCharm NeighborhoodView 的双击行为）*/
@@ -4615,6 +4672,10 @@ struct Index {
       // MoreRunToolbarActions：运行相关的更多操作（PyCharm 里是 运行/调试/编辑配置… 的弹层）
       this.dialogTitle = '运行';
       this.dialog = 'runConfig';
+      return;
+    }
+    if (action === 'scope.view' || action === 'scope.show') {
+      this.openScopeView();
       return;
     }
     if (action === 'graph.neighborhood' || action === 'graph.show' || action === 'diagram.show') {
@@ -8571,6 +8632,8 @@ if (this.settings.showBottomToolWindow) {
             this.FindInFilesContent()
           } else if (this.dialog === 'breakpoints') {
       this.BreakpointsContent()
+    } else if (this.dialog === 'scope') {
+      this.ScopeContent()
     } else if (this.dialog === 'graph') {
       this.GraphContent()
     } else if (this.dialog === 'localHistory') {
@@ -9636,6 +9699,46 @@ if (this.settings.showBottomToolWindow) {
         .constraintSize({ maxHeight: 380 })
         .scrollBar(BarState.Auto)
       }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 作用域视图内容（ScopeView）：点行跳到定义行 */
+  @Builder
+  ScopeContent() {
+    Column() {
+      Scroll() {
+        Column() {
+          ForEach(this.scopeRows, (row: string, index: number) => {
+            Row() {
+              Text(row)
+                .fontSize(12)
+                .fontFamily(PyFont.mono)
+                .fontColor(row.indexOf('类') >= 0 ? this.theme.debugAccent : this.theme.textPrimary)
+                .layoutWeight(1)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+            }
+            .width('100%')
+            .height(24)
+            .padding({ left: 8, right: 8 })
+            .onClick(() => {
+              const m: RegExpMatchArray | null = row.match(/L(\d+)/);
+              if (m !== null) {
+                const line: number = Number.parseInt(m[1], 10);
+                this.editorController.revealLine(line);
+                this.setStatus(`已跳到作用域所在行 ${line}`);
+              }
+            })
+          }, (row: string, index: number) => `sc_${index}_${row}`)
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+      }
+      .width('100%')
+      .constraintSize({ maxHeight: 460 })
+      .scrollBar(BarState.Auto)
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
