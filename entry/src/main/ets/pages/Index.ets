@@ -257,25 +257,32 @@ const SCOPE_AST_SCRIPT: string = [
   'src = sys.argv[1]',
   'out = sys.argv[2]',
   'text = io.open(src, encoding=\'utf-8\').read()',
-  'rows = []',
-  'def add(kind, name, line, depth, extra):',
-  '    rows.append((\'  \' * depth) + kind + \' \' + name + \'   L\' + str(line) + (\'   \' + extra if extra else \'\'))',
+  'tree = ast.parse(text)',
+  'defs = []',
   'def walk(node, depth):',
   '    for child in ast.iter_child_nodes(node):',
   '        if isinstance(child, ast.ClassDef):',
   '            bases = [b.id for b in child.bases if isinstance(b, ast.Name)]',
-  '            add(\'类\', child.name, child.lineno, depth, (\'继承 \' + \',\'.join(bases)) if bases else \'\')',
+  '            defs.append((\'类\', child.name, child.lineno, depth, (\'继承 \' + \',\'.join(bases)) if bases else \'\'))',
   '            walk(child, depth + 1)',
   '        elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):',
   '            nassign = len([n for n in child.body if isinstance(n, (ast.Assign, ast.AnnAssign))])',
   '            ncalls = len([n for n in ast.walk(child) if isinstance(n, ast.Call)])',
   '            args = [a.arg for a in child.args.args]',
-  '            add((\'async 函数\' if isinstance(child, ast.AsyncFunctionDef) else \'函数\'), child.name, child.lineno, depth, \'参数 %d · 局部赋值 %d · 调用 %d\' % (len(args), nassign, ncalls))',
+  '            kind = \'async 函数\' if isinstance(child, ast.AsyncFunctionDef) else \'函数\'',
+  '            defs.append((kind, child.name, child.lineno, depth, \'参数 %d · 局部赋值 %d · 调用 %d\' % (len(args), nassign, ncalls)))',
   '            walk(child, depth + 1)',
   '        else:',
   '            walk(child, depth)',
-  'add(\'模块\', src.split(\'/\')[-1], 1, 0, \'总行 %d\' % len(text.splitlines()))',
-  'walk(ast.parse(text), 1)',
+  'walk(tree, 1)',
+  'counts = {}',
+  'for node in ast.walk(tree):',
+  '    if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):',
+  '        counts[node.id] = counts.get(node.id, 0) + 1',
+  'rows = [\'模块 \' + src.split(\'/\')[-1] + \'   L1   总行 %d\' % len(text.splitlines())]',
+  'for (kind, name, line, depth, extra) in defs:',
+  '    nref = counts.get(name, 0)',
+  '    rows.append((\'  \' * depth) + kind + \' \' + name + \'   L\' + str(line) + (\'   \' + extra if extra else \'\') + \' · 被引用 %d\' % nref)',
   'io.open(out, \'w\', encoding=\'utf-8\').write(chr(10).join(rows))',
 ].join('\n');
 
@@ -2265,7 +2272,7 @@ struct Index {
         const line: number = this.lineOfSymbol(name);
         if (line > 0) {
           this.editorController.revealLine(line);
-          this.setStatus(`已从图表跳转到 ${name}（第 ${line} 行）`);
+          this.setStatus(`已从图表跳转到 ${name.replace(/\s+L\d+$/, '')}（第 ${line} 行）`);
         } else {
           this.setStatus(`${name} 是外部/基类符号，当前文件内没有定义行`);
         }
@@ -3450,7 +3457,10 @@ struct Index {
         const name: string = m[3];
         const line: string = m[4];
         const prefix: string = kind === '类' ? 'C' : (kind === 'async 函数' ? 'ƒa' : 'ƒ');
-        outRows.push(`${indent}${prefix}  ${name}    L${line}`);
+        // 带上「被引用 N」（ast 统计的 Load 上下文引用次数，等价于查找用法的计数）
+        const mRef: RegExpMatchArray | null = row.match(/被引用\s*(\d+)/);
+        const refTxt: string = mRef !== null ? `  ·  引用 ${mRef[1]}` : '';
+        outRows.push(`${indent}${prefix}  ${name}    L${line}${refTxt}`);
       }
       if (outRows.length > 0) {
         this.liveStructure = outRows;
@@ -10489,7 +10499,8 @@ if (this.settings.showBottomToolWindow) {
               this.dialog = '';
               if (line > 0) {
                 this.editorController.revealLine(line);
-                this.setStatus(`已转到符号 ${name}（第 ${line} 行）`);
+                // 结构行形如「ƒ  greet    L6」，提示里只显示符号名（去掉 L 后缀）
+        this.setStatus(`已转到符号 ${name.replace(/\s+L\d+$/, '')}（第 ${line} 行）`);
               }
             })
           }, (row: string) => `sym_${row}`)
