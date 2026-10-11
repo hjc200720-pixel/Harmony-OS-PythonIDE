@@ -251,7 +251,7 @@ const PROJECT_COLORS: ProjectColor[] = [
 
 /** 随处搜索（SearchEverywhere）的"操作"栏：label|actionId */
 const SE_ACTIONS: string[] = [
-  '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
+  '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
   '循环补全|ed.hippieComplete', '补全语句|ed.completeStatement',
   '撤销|edit.undo', '重做|edit.redo', '全部保存|file.saveAll',
   '在文件中查找|edit.findInFiles', '随处搜索|edit.searchEverywhere', '转到行|nav.gotoLine',
@@ -1506,6 +1506,11 @@ struct Index {
   @State paneRatio: number = 0.5;
   /** 新窗格是否放在前侧（向左/向上拆分 = true）——PyCharm SplitChooser 的 SplitLeft/SplitTop */
   @State paneBefore: boolean = false;
+  /** 断点列表（XDebugger: View Breakpoints）：显示行 + 对应文件路径 + 行号 */
+  @State bpRows: string[] = [];
+  @State bpKeys: string[] = [];
+  @State bpLines: number[] = [];
+
   /** 本地历史（Local History）：快照行显示 + 对应文件路径 */
   @State historyRows: string[] = [];
   @State historyPaths: string[] = [];
@@ -3523,6 +3528,67 @@ struct Index {
     this.setStatus('全部已保存');
   }
 
+  /** 断点列表（PyCharm XDebugger: View Breakpoints）*/
+  private openBreakpoints(): void {
+    const store: Record<string, number[]> = this.allBreakpoints();
+    const rows: string[] = [];
+    const keys: string[] = [];
+    const lines: number[] = [];
+    const fileKeys: string[] = Object.keys(store);
+    for (const f of fileKeys) {
+      const nums: number[] = store[f];
+      const base: string = f.substring(f.lastIndexOf('/') + 1);
+      for (const n of nums) {
+        rows.push(`${base}:${n}`);
+        keys.push(f);
+        lines.push(n);
+      }
+    }
+    this.bpRows = rows;
+    this.bpKeys = keys;
+    this.bpLines = lines;
+    this.dialogTitle = `断点（${rows.length}）`;
+    this.dialog = 'breakpoints';
+    this.setStatus(`共 ${rows.length} 个断点`);
+  }
+
+  /** 删除单个断点（写回存储；若删除的是当前文件则同步编辑器标记）*/
+  private removeBreakpoint(key: string, line: number): void {
+    const store: Record<string, number[]> = this.allBreakpoints();
+    const nums: number[] | undefined = store[key];
+    if (nums === undefined) {
+      return;
+    }
+    const next: number[] = [];
+    for (const n of nums) {
+      if (n !== line) {
+        next.push(n);
+      }
+    }
+    store[key] = next;
+    FileService.writeText(this.breakpointStorePath(), JSON.stringify(store));
+    const tab: EditorTab | undefined = this.activeTab();
+    if (tab !== undefined && tab.path === key) {
+      tab.breakpoints = next.slice();
+      this.pendingBreakpoints = next.slice();
+      this.tabs = this.tabs.slice();
+    }
+    this.openBreakpoints();
+  }
+
+  /** 清空全部断点 */
+  private clearAllBreakpoints(): void {
+    FileService.writeText(this.breakpointStorePath(), JSON.stringify({}));
+    const tab: EditorTab | undefined = this.activeTab();
+    if (tab !== undefined) {
+      tab.breakpoints = [];
+      this.pendingBreakpoints = [];
+      this.tabs = this.tabs.slice();
+    }
+    this.openBreakpoints();
+    this.setStatus('已清除全部断点');
+  }
+
   private breakpointStorePath(): string {
     return `${FileService.context().filesDir}/breakpoints.json`;
   }
@@ -4202,6 +4268,10 @@ struct Index {
       // MoreRunToolbarActions：运行相关的更多操作（PyCharm 里是 运行/调试/编辑配置… 的弹层）
       this.dialogTitle = '运行';
       this.dialog = 'runConfig';
+      return;
+    }
+    if (action === 'debug.viewBreakpoints' || action === 'debug.showBreakpoints') {
+      this.openBreakpoints();
       return;
     }
     if (action === 'history.show' || action === 'vcs.showHistory' || action === 'history.local') {
@@ -8046,7 +8116,9 @@ if (this.settings.showBottomToolWindow) {
             this.RecentFilesContent()
           } else if (this.dialog === 'findInFiles') {
             this.FindInFilesContent()
-          } else if (this.dialog === 'localHistory') {
+          } else if (this.dialog === 'breakpoints') {
+      this.BreakpointsContent()
+    } else if (this.dialog === 'localHistory') {
       this.LocalHistoryContent()
     } else if (this.dialog === 'diffView') {
       this.DiffContent()
@@ -9052,6 +9124,63 @@ if (this.settings.showBottomToolWindow) {
         .borderRadius(4)
         .backgroundColor(this.theme.buttonPrimaryBg)
         .onClick(() => this.reinitRuntime())
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 断点列表内容 */
+  @Builder
+  BreakpointsContent() {
+    Column() {
+      if (this.bpRows.length === 0) {
+        Text('暂无断点（在编辑器行号左侧点一下即可添加）')
+          .fontSize(12)
+          .fontColor(this.theme.textDisabled)
+          .padding({ left: 8 })
+      } else {
+        Scroll() {
+          Column() {
+            ForEach(this.bpRows, (row: string, index: number) => {
+              Row() {
+                Text(row)
+                  .fontSize(12)
+                  .fontFamily(PyFont.mono)
+                  .fontColor(this.theme.textPrimary)
+                  .layoutWeight(1)
+                  .maxLines(1)
+                Text('删除')
+                  .fontSize(12)
+                  .fontColor(this.theme.funcName)
+                  .padding({ left: 10, right: 6 })
+                  .onClick(() => {
+                    this.removeBreakpoint(this.bpKeys[index], this.bpLines[index]);
+                  })
+              }
+              .width('100%')
+              .height(26)
+              .padding({ left: 8, right: 8 })
+            }, (row: string, index: number) => `bp_${index}_${row}`)
+            Row() {
+              Text('全部清除')
+                .fontSize(12)
+                .fontColor(this.theme.funcName)
+                .layoutWeight(1)
+                .onClick(() => {
+                  this.clearAllBreakpoints();
+                })
+            }
+            .width('100%')
+            .height(26)
+            .padding({ left: 8, right: 8 })
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 380 })
+        .scrollBar(BarState.Auto)
+      }
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
