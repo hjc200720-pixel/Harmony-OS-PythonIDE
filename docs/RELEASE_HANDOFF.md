@@ -98,3 +98,47 @@ Python 代码在本机沙箱内运行；华为账号登录使用系统 Account K
 登录：点击后系统返回 1001502003（PARAMETER_INVALID），界面如实显示，未做假成功
 权限：@hms.core.authentication.d.ts 无 @permission 要求；module.json5 未申请权限
 ```
+## 五、我已自动算好/跑通的（你直接使用）
+
+### 5.1 AGC 登记用的「签名证书指纹」（本机已算出）
+
+```
+DF:21:A3:C0:9F:79:54:57:93:05:F8:5C:64:F8:0C:AD:86:F7:98:53:EE:3A:88:7C:1D:EC:95:D2:18:DF:3A:37
+```
+
+- 来源：`C:\Users\HUAWEI\.ohos\config\default_HarmonyPyIDE_*.cer`（取 PEM 的 DER 部分做 SHA-256）
+- 说明：本机 6 个工程的 .cer 指纹**完全相同**，说明 DevEco 对同一开发者账号复用同一调试证书 —— 所以这串可**直接填到 AGC 的「签名证书指纹」**。
+- 发布证书的指纹要等你申请发布证书后再算一次（同一个位置，换 .cer 文件即可；我留了脚本思路）。
+
+### 5.2 release 打包流水线已跑通（用调试证书验证）
+
+```
+hvigorw --no-daemon --mode module -p product=default -p buildMode=release assembleHap
+→ BUILD SUCCESSFUL（25 tasks executed）
+产物：entry-default-signed.hap · entry-default-unsigned.hap · mapping · pack.info · symbol
+```
+含义：**发布模式的编译/打包链路本身没问题**，缺的只是把签名材料换成 AGC 发布证书。
+
+### 5.3 备案材料表（我已填好能填的，你补实名信息）
+
+| 字段 | 值 |
+|---|---|
+| 应用名称 | HarmonyPyIDE（鸿蒙 Python IDE）|
+| 包名 | com.harmonyide.python |
+| 版本 | 1.0.0（versionCode 1000000）|
+| 开发者/主体 | **你填**（个人身份证 或 企业营业执照）|
+| 联系方式 | **你填** |
+| 应用分类 | 开发工具 |
+| 是否联网 | 否（全部本地运行；仅华为账号登录走系统服务）|
+| 是否收集个人信息 | 否（登录信息仅本机保存，不上传）|
+| 权限清单 | 无敏感权限 |
+| 隐私政策 URL | **你填**（把 docs/privacy-policy.html 托管后得到）|
+| 域名/服务 | 无自建服务端 |
+
+## 六、我这边「自动做」还剩的可选项（你一句话我就继续）
+
+1. 把 6 个占位工具窗（覆盖率/端点/数据视图/Jupyter 变量/TODO/AI 聊天）逐个做成**真功能**：
+   - TODO 最容易做真（扫工程里的 TODO/FIXME 注释并列出、点击跳转）—— 建议先做这个
+   - Jupyter 变量 → 需要 Jupyter 会话，只能保持占位
+2. 继续补 PyCharm 对齐项（右栏 secondary 工具窗、绘图语义等）
+3. 应用内「检查更新 / 反馈」等上架常被要求的入口

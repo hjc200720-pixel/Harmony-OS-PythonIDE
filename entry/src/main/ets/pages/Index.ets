@@ -177,6 +177,17 @@ function toolWindows(): ToolWindowInfo[] {
 }
 
 /** 工具窗占位面板定义（标题 + 工具条按钮 + 空态文案，按钮名取自 PyCharm 的 action group） */
+/** TODO 扫描结果的一条：text 用于显示，loc 为 path#line 用于点击跳转 */
+class TodoItem {
+  text: string = '';
+  loc: string = '';
+
+  constructor(text: string, loc: string) {
+    this.text = text;
+    this.loc = loc;
+  }
+}
+
 class ToolWindowPanel {
   id: string;
   title: string;
@@ -8972,7 +8983,8 @@ if (this.settings.showBottomToolWindow) {
       return;
     }
     if (kind === 'plots') {
-      this.showInfo('图表', [
+      // PyCharm 的 Plots（中文名「绘图」）用于科学计算图；本 IDE 的「图表」是继承/调用关系图，两者不同
+      this.showInfo('绘图', [
         'PyCharm 的 Plots 工具窗用于可视化科学计算图（matplotlib 等）。',
         '本 IDE 暂不支持内嵌图表渲染。'
       ]);
@@ -9961,7 +9973,7 @@ if (this.settings.showBottomToolWindow) {
 
 /** 扫描工程里的 TODO/FIXME/XXX 注释（PyCharm 的 TODO 工具窗） */
   private scanTodo(): void {
-    const out: string[] = [];
+    const out: TodoItem[] = [];
     try {
       this.collectTodo(this.projectRoot, out, 0);
     } catch (err) {
@@ -9972,7 +9984,7 @@ if (this.settings.showBottomToolWindow) {
     this.setStatus(`TODO：共 ${out.length} 条`);
   }
 
-  private collectTodo(dir: string, out: string[], depth: number): void {
+  private collectTodo(dir: string, out: TodoItem[], depth: number): void {
     if (depth > 6 || out.length > 200) {
       return;
     }
@@ -9996,7 +10008,7 @@ if (this.settings.showBottomToolWindow) {
           const line: string = lines[k];
           const upper: string = line.toUpperCase();
           if (upper.indexOf('TODO') >= 0 || upper.indexOf('FIXME') >= 0 || upper.indexOf('XXX') >= 0) {
-            out.push(`${n.name}:${k + 1}  ${line.trim()}`);
+            out.push(new TodoItem(`${n.name}:${k + 1}  ${line.trim()}`, `${n.path}#${k + 1}`));
             if (out.length > 200) {
               return;
             }
@@ -10381,7 +10393,13 @@ if (this.settings.showBottomToolWindow) {
       this.setStatus(`${w.label}：${this.rightToolWindow.length > 0 ? '已在右侧打开面板' : '已关闭'}`);
       return;
     }
-    if (w.id === 'Bookmarks' || w.id === 'Coverage' || w.id === 'Endpoints'
+    if (w.id === 'Bookmarks') {
+      // 与左栏「书签」按钮行为统一：打开右侧真面板（真实列表），不用弹窗
+      this.twPanelId = 'Bookmarks';
+      this.rightToolWindow = 'Bookmarks';
+      return;
+    }
+    if (w.id === 'Coverage' || w.id === 'Endpoints'
       || w.id === 'SciView' || w.id === 'Jupyter Variables') {
       this.twPanelId = w.id;
       this.dialogTitle = w.label;
@@ -10426,8 +10444,8 @@ if (this.settings.showBottomToolWindow) {
               .fontSize(12)
               .fontColor(this.theme.textDisabled)
           } else {
-            ForEach(this.todoItems, (line: string) => {
-              Text(line)
+            ForEach(this.todoItems, (item: TodoItem) => {
+              Text(item.text)
                 .fontSize(12)
                 .fontFamily(PyFont.mono)
                 .fontColor(this.theme.textPrimary)
@@ -10435,7 +10453,11 @@ if (this.settings.showBottomToolWindow) {
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .margin({ bottom: 4 })
-            }, (line: string) => line)
+                // 点击跳转到该行（PyCharm 的 TODO 工具窗行为）
+                .onClick(() => {
+                  this.openLocationEntry(item.loc);
+                })
+            }, (item: TodoItem) => item.loc)
           }
         }
         .width('100%')
@@ -12467,8 +12489,10 @@ if (this.settings.showBottomToolWindow) {
   @State settingsExpanded: string[] = ['appearance', 'editor', 'project'];
   /** 设置搜索关键字（PyCharm 设置左上角有搜索框） */
   @State settingsSearch: string = '';
+}
+
   /** TODO 工具窗扫描结果（行文本 = "文件:行号  内容"） */
-  @State todoItems: string[] = [];
+  @State todoItems: TodoItem[] = [];
 
   private settingsCategoryLabel(id: string): string {
     if (id === 'appearance') {
