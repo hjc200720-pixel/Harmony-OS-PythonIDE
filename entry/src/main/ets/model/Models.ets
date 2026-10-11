@@ -208,6 +208,10 @@ export interface DebugPause {
   locals: string[][];
   /** 调用栈：[文件, 行号, 函数]，最内层在前 */
   stack: string[][];
+  /** Evaluate：被求值的表达式（仅 'eval' 类暂停有值）*/
+  evalExpr?: string;
+  /** Evaluate：求值结果（仅 'eval' 类暂停有值）*/
+  evalResult?: string;
 }
 
 /** 查找/替换状态 */

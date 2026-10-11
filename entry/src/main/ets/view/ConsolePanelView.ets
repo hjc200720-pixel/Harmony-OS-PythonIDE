@@ -125,6 +125,11 @@ export struct ConsolePanelView {
   /** 调用栈帧 [file, line, func]，可点击跳转到源码位置（PyCharm Frames 行为）*/
   @Prop debugStack: string[][] = [];
   gotoFrame: (file: string, line: number) => void = () => {};
+  /** Evaluate（PyCharm）：表达式输入 + 求值历史 */
+  @Prop evalText: string = '';
+  @Prop debugEvals: string[] = [];
+  onEvalText: (value: string) => void = () => {};
+  evalDebug: () => void = () => {};
   @Prop running: boolean = false;
   @Prop replPrompt: string = '>>> ';
   @Prop interpreterLabel: string = '';
@@ -582,6 +587,39 @@ export struct ConsolePanelView {
         .width('100%')
         .padding({ left: 8, top: 4, bottom: 4 })
         if (this.debugStack.length > 0) {
+          Row() {
+            TextInput({ text: this.evalText, placeholder: '求值表达式（如 name）…' })
+              .fontSize(12)
+              .fontFamily(PyFont.mono)
+              .height(28)
+              .layoutWeight(1)
+              .backgroundColor(this.theme.inputBg)
+              .fontColor(this.theme.textPrimary)
+              .placeholderColor(this.theme.textDisabled)
+              .onChange((value: string) => {
+                this.onEvalText(value);
+              })
+            Text('求值')
+              .fontSize(12)
+              .fontColor(this.theme.textOnAccent)
+              .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+              .margin({ left: 6 })
+              .borderRadius(4)
+              .backgroundColor(this.theme.buttonPrimaryBg)
+              .onClick(() => this.evalDebug())
+          }
+          .width('100%')
+          .padding({ left: 16, right: 8, top: 4, bottom: 4 })
+          ForEach(this.debugEvals, (row: string, index: number) => {
+            Text(row)
+              .fontSize(12)
+              .fontFamily(PyFont.mono)
+              .fontColor(this.theme.funcName)
+              .width('100%')
+              .padding({ left: 16, right: 8 })
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }, (row: string, index: number) => `ev_${index}_${row}`)
           Column() {
             ForEach(this.debugStack, (frame: string[], index: number) => {
               Row() {

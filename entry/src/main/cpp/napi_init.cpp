@@ -291,6 +291,23 @@ def _pyide_trace(frame, event, arg):
         _pyide_enabled = False
         _pyide_sys.settrace(None)
         return None
+    # PyCharm Evaluate：UI 发 eval:<表达式> 时，在**当前暂停帧**里求值，把结果并入新的暂停事件，然后继续阻塞
+    while command.startswith('eval:'):
+        _pyide_expr = command[5:]
+        try:
+            _pyide_value = repr(eval(_pyide_expr, frame.f_globals, frame.f_locals))
+        except Exception as _pyide_eval_err:
+            _pyide_value = '<错误: %s>' % _pyide_eval_err
+        _pyide_eval_payload = _pyide_json.dumps({
+            'file': filename,
+            'line': lineno,
+            'func': frame.f_code.co_name,
+            'locals': locals_out,
+            'stack': stack,
+            'evalExpr': _pyide_expr,
+            'evalResult': _pyide_value,
+        })
+        command = _pyide_bridge.pause('eval', _pyide_eval_payload)
     if command == 'stop':
         _pyide_enabled = False
         _pyide_sys.settrace(None)

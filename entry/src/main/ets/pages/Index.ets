@@ -405,6 +405,9 @@ struct Index {
   @State debugFunc: string = '';
   @State debugLocals: string[][] = [];
   @State debugStack: string[][] = [];
+  /** Evaluate（PyCharm）：输入表达式 + 求值历史 */
+  @State evalText: string = '';
+  @State debugEvals: string[] = [];
   /** 「在文件中查找」结果（path:line: text） */
   @State searchResults: string[] = [];
   /** 视图菜单的显示开关（对应 PyCharm 的 View → Appearance 一组） */
@@ -3839,6 +3842,12 @@ struct Index {
   }
 
   private onDebugPause(pause: DebugPause): void {
+    // Evaluate 结果（PyCharm Evaluate 行为）：追加到求值历史
+    if (pause.evalExpr !== undefined && pause.evalResult !== undefined) {
+      const next: string[] = this.debugEvals.slice();
+      next.push(`${pause.evalExpr} = ${pause.evalResult}`);
+      this.debugEvals = next;
+    }
     this.debugPaused = true;
     this.debugFile = pause.file;
     this.debugLine = pause.line;
@@ -3973,6 +3982,17 @@ struct Index {
   }
 
   /** 步出：执行到当前函数返回上一层 */
+  /** Evaluate（PyCharm）：在暂停帧里求值表达式 */
+  private evalDebug(): void {
+    const expr: string = this.evalText.trim();
+    if (expr.length === 0 || !this.debugPaused) {
+      return;
+    }
+    PyRuntimeService.sendDebugCommand(`eval:${expr}`);
+    this.evalText = '';
+    this.setStatus(`求值中：${expr}`);
+  }
+
   private stepOutDebug(): void {
     if (!this.debugPaused) {
       this.showToast('程序正在运行，暂停时才能步出');
@@ -6376,6 +6396,12 @@ struct Index {
                   activeTab: this.consoleTab,
                   debugLines: this.debugPanelLines(),
                   debugStack: this.debugStack,
+                  evalText: this.evalText,
+                  debugEvals: this.debugEvals,
+                  onEvalText: (value: string) => {
+                    this.evalText = value;
+                  },
+                  evalDebug: () => this.evalDebug(),
                   gotoFrame: (file: string, line: number) => {
                     // PyCharm：点调用栈帧跳到对应源码位置
                     this.openFile(file, FileService.baseName(file));
@@ -6600,6 +6626,12 @@ if (this.settings.showBottomToolWindow) {
                   activeTab: this.consoleTab,
                   debugLines: this.debugPanelLines(),
                   debugStack: this.debugStack,
+                  evalText: this.evalText,
+                  debugEvals: this.debugEvals,
+                  onEvalText: (value: string) => {
+                    this.evalText = value;
+                  },
+                  evalDebug: () => this.evalDebug(),
                   gotoFrame: (file: string, line: number) => {
                     // PyCharm：点调用栈帧跳到对应源码位置
                     this.openFile(file, FileService.baseName(file));
