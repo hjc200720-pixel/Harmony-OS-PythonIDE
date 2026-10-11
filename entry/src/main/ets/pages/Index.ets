@@ -537,6 +537,9 @@ struct Index {
   /** Evaluate（PyCharm）：输入表达式 + 求值历史 */
   @State evalText: string = '';
   @State debugEvals: string[] = [];
+  /** 全工程类（跨文件转到类）*/
+  @State classRows: string[] = [];
+
   /** 全工程符号（类/函数 + 所在文件行）*/
   @State projectSymbols: string[] = [];
 
@@ -2332,6 +2335,21 @@ struct Index {
     this.setStatus(rows.length > 0 && rows[0].indexOf('类 ') === 0
       ? `继承层级：${rows.length} 行（ast）`
       : '当前文件没有类定义');
+  }
+
+  /** 跨文件转到类：列出全工程的类（含所在文件与基类）*/
+  private async loadProjectClasses(): Promise<void> {
+    const dir: string = `${FileService.context().filesDir}/.harmonyide`;
+    FileService.ensureDir(dir);
+    FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
+    const script: string = `${dir}/ast_project.py`;
+    const out: string = `${this.projectRoot}/.harmonyide/project_classes.txt`;
+    FileService.writeText(script, PROJECT_AST_SCRIPT);
+    const txt: string = await this.runPyAndRead(script, [this.projectRoot, out], out);
+    const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : [];
+    const only: string[] = rows.filter((r: string) => r.indexOf('类 ') === 0);
+    this.classRows = only;
+    this.setStatus(`全工程类：${only.length} 个（ast 跨文件）`);
   }
 
   /** 全工程符号列表（跨文件）：类与函数，附所在文件与行号 */
@@ -5166,6 +5184,13 @@ struct Index {
       return;
     }
     if (action === 'nav.gotoClass' || action === 'edit.gotoClass') {
+      // 跨文件转到类：列全工程的类，点行打开该文件并定位
+      this.dialogTitle = '转到类（全工程）';
+      this.dialog = 'gotoclass';
+      this.loadProjectClasses();
+      return;
+    }
+    if (action === 'nav.gotoClass.legacy') {
       this.dialogTitle = '转到类';
       this.dialog = 'gotoClass';
       return;
@@ -9094,6 +9119,8 @@ if (this.settings.showBottomToolWindow) {
             this.FindInFilesContent()
           } else if (this.dialog === 'breakpoints') {
       this.BreakpointsContent()
+    } else if (this.dialog === 'gotoclass') {
+      this.GoToClassContent()
     } else if (this.dialog === 'usages') {
       this.UsagesContent()
     } else if (this.dialog === 'timeline') {
@@ -10165,6 +10192,61 @@ if (this.settings.showBottomToolWindow) {
         }
         .width('100%')
         .constraintSize({ maxHeight: 380 })
+        .scrollBar(BarState.Auto)
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 跨文件转到类内容：列全工程的类，点行打开该文件并定位 */
+  @Builder
+  GoToClassContent() {
+    Column() {
+      if (this.classRows.length === 0) {
+        Text('正在扫描全工程的类…')
+          .fontSize(11.5)
+          .fontColor(this.theme.textDisabled)
+          .padding({ left: 8, top: 2, bottom: 4 })
+      } else {
+        Text(`全工程共 ${this.classRows.length} 个类（点行打开定义处）`)
+          .fontSize(11.5)
+          .fontColor(this.theme.textDisabled)
+          .padding({ left: 8, top: 2, bottom: 4 })
+        Scroll() {
+          Column() {
+            ForEach(this.classRows, (row: string, index: number) => {
+              Text(row)
+                .fontSize(12)
+                .fontFamily(PyFont.mono)
+                .fontColor(this.theme.debugAccent)
+                .width('100%')
+                .height(26)
+                .padding({ left: 8, right: 8 })
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .onClick(() => {
+                  const m: RegExpMatchArray | null = row.match(/^类\s+(\S+)\s+([^\s:]+):(\d+)/);
+                  if (m !== null) {
+                    const rel: string = m[2];
+                    const line: number = Number.parseInt(m[3], 10);
+                    const target: string = `${this.projectRoot}/${rel}`;
+                    this.dialog = '';
+                    if (FileService.exists(target) && target !== this.editorFilePath) {
+                      const nm: string = rel.substring(rel.lastIndexOf('/') + 1);
+                      this.openFile(target, nm);
+                    }
+                    this.editorController.revealLine(line);
+                    this.setStatus(`已跳到类 ${m[1]}（${rel}:${line}）`);
+                  }
+                })
+            }, (row: string, index: number) => `gc_${index}_${row}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 420 })
         .scrollBar(BarState.Auto)
       }
     }
