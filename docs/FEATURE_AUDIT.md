@@ -1085,3 +1085,29 @@ ScopeViewPopupMenu 里可做的那几项（展开/折叠/跳到定义）。
     验证后「取消」关闭 ✓
 
 **未做（如实）**：构建系统同步/导入 · 依赖树与用法分析 · 运行配置管理 · 项目刷新。
+
+### 0.62 VCS 日志（217）：可行性结论 + 变更时间线落地并验证
+
+**依据核实**：VCS 相关组来自 intellij.platform.vcs.impl.jar / vcs.log.impl.jar / vcs.dvcs.impl.jar：
+    Vcs.FileHistory.ContextMenu/PresentationSettings/Toolbar（文件历史视图）· Vcs.Browse · Vcs.CheckinProjectMenu/Toolbar ·
+    Vcs.Commit.* · Vcs.Diff.* · Vcs.CherryPick · Vcs.SavedPatches.* · Vcs.Shelf.* · Vcs.Push · Vcs.RepositoryChangesBrowserMenu
+
+**可行性结论**：所有需要 git 的能力（提交/拣选/推送/与修订比较/搁置/补丁）在本设备**不可做** ✗（HarmonyOS 应用内无 git 可执行文件）；
+但 **Vcs.FileHistory（文件历史/变更时间线）可做** ✓ —— 本地历史已经在按文件记录版本快照，
+它承载的正是「变更历史」这一核心信息。
+
+**实现**：
+- 快照目录写入 path.txt 记录来源文件；对早期没有 path.txt 的目录，用「路径哈希」反查工程内 .py 文件兜底
+  （历史目录名就是路径哈希，因此可逆匹配）
+- 「变更时间线」对话框：汇总所有文件的历史版本，按时间倒序显示「时间戳 文件名 N 行」
+- 点任意版本 → 用该快照与该文件**当前磁盘内容**做差异（复用 0.39 的差异引擎）
+- 入口：随处搜索首屏「变更时间线」
+
+**真机验证**：
+    标题「变更时间线：1 个历史版本」✓
+    版本行 `main.py   19 行` ✓✓（哈希兜底生效，不再显示哈希目录名）
+    双击版本 → 差异对话框「差异：历史版本 ↔ 当前内容」+ `+0 -0`（未修改，无差异，行为正确）✓✓
+    状态栏「历史版本比较：+0 行 / -0 行」✓   验证后「取消」关闭 ✓
+
+**未做（如实）**：git 提交/分支/提交图 · 与任意修订比较 · 搁置 · 补丁 · 推送/拉取。
+**小改进待做**：时间戳显示成可读时间（当前是毫秒字符串）。

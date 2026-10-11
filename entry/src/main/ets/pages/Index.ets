@@ -300,7 +300,7 @@ const DEPS_SCRIPT: string = [
 ].join('\n');
 
 const SE_ACTIONS: string[] = [
-  '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
+  '变更时间线|vcs.fileHistory', '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
   '循环补全|ed.hippieComplete', '补全语句|ed.completeStatement',
   '撤销|edit.undo', '重做|edit.redo', '全部保存|file.saveAll',
   '在文件中查找|edit.findInFiles', '随处搜索|edit.searchEverywhere', '转到行|nav.gotoLine',
@@ -457,6 +457,10 @@ struct Index {
   /** Evaluate（PyCharm）：输入表达式 + 求值历史 */
   @State evalText: string = '';
   @State debugEvals: string[] = [];
+  /** 变更时间线（Vcs.FileHistory）：显示行 + 对应快照路径 */
+  @State timelineRows: string[] = [];
+  @State timelinePaths: string[] = [];
+
   /** 外部系统（ExternalSystem）：依赖清单行 + 外部任务执行结果行 */
   @State extRows: string[] = [];
 
@@ -1770,11 +1774,16 @@ struct Index {
 
   /** 本地历史目录：<工程根>/.harmonyide/history/<文件名的哈希编码>/ */
   private historyDirFor(path: string): string {
+    return `${this.projectRoot}/.harmonyide/history/${this.historyHashOf(path)}`;
+  }
+
+  /** 与 historyDirFor 同一套哈希（时间线用它反查旧目录属于哪个文件）*/
+  private historyHashOf(path: string): string {
     let h: number = 0;
     for (let i: number = 0; i < path.length; i++) {
       h = (h * 31 + path.charCodeAt(i)) % 1000000007;
     }
-    return `${this.projectRoot}/.harmonyide/history/${h}`;
+    return `${h}`;
   }
 
   /** 保存前把磁盘上的旧内容快照进本地历史（内容相同则不重复快照）*/
@@ -1802,6 +1811,8 @@ struct Index {
         return;
       }
       FileService.writeText(`${dir}/snap_${Date.now()}.txt`, old);
+      // 记录该目录属于哪个源文件：变更时间线（Vcs.FileHistory 语义）需要
+      FileService.writeText(`${dir}/path.txt`, path);
       FileService.log(`local history snapshot ${path}`);
       // 保留策略：每个文件最多 20 个快照，超出则删最旧的（避免无限增长）
       const all: FileNode[] = FileService.listDir(dir, 1);
@@ -1822,6 +1833,106 @@ struct Index {
     } catch (e) {
       FileService.log(`snapshot failed ${JSON.stringify(e)}`);
     }
+  }
+
+  /** 变更时间线（Vcs.FileHistory 语义）：汇总工程内所有文件的历史版本，按时间倒序 */
+  private openChangeTimeline(): void {
+    const root: string = `${this.projectRoot}/.harmonyide/history`;
+    if (!FileService.exists(root)) {
+      this.showToast('暂无历史快照（每次保存前会自动记录）');
+      return;
+    }
+    const rows: string[] = [];
+    const paths: string[] = [];
+    // 兜底映射：早期快照目录没写 path.txt，用「路径哈希」反查工程内的 .py 文件
+    const hashToPath: Map<string, string> = new Map<string, string>();
+    const projectFiles: FileNode[] = FileService.listDir(this.projectRoot, 8);
+    for (const nd of projectFiles) {
+      if (!nd.isDir && nd.name.endsWith('.py')) {
+        hashToPath.set(this.historyHashOf(nd.path), nd.path);
+      }
+    }
+    const dirs: FileNode[] = FileService.listDir(root, 1);
+    for (const d of dirs) {
+      if (!d.isDir) {
+        continue;
+      }
+      const dirPath: string = `${root}/${d.name}`;
+      let src: string = '';
+      if (FileService.exists(`${dirPath}/path.txt`)) {
+        src = FileService.readText(`${dirPath}/path.txt`).trim();
+      }
+      const mapped: string | undefined = hashToPath.get(d.name);
+      if (src.length === 0 && mapped !== undefined) {
+        src = mapped;
+      }
+      const base: string = src.length > 0 ? src.substring(src.lastIndexOf('/') + 1) : d.name;
+      const snaps: FileNode[] = FileService.listDir(dirPath, 1);
+      for (const s of snaps) {
+        if (s.isDir || !s.name.startsWith('snap_')) {
+          continue;
+        }
+        const ts: string = s.name.substring(5, 24);
+        let lines: number = 0;
+        try {
+          lines = FileService.readText(`${dirPath}/${s.name}`).split('\n').length;
+        } catch (e) {
+          lines = 0;
+        }
+        rows.push(`${ts}   ${base}   ${lines} 行`);
+        paths.push(`${dirPath}/${s.name}`);
+      }
+    }
+    // 时间倒序（时间戳字符串可直接比较）
+    const pairs: string[][] = [];
+    for (let i: number = 0; i < rows.length; i++) {
+      pairs.push([rows[i], paths[i]]);
+    }
+    pairs.sort((a: string[], b: string[]) => a[0] < b[0] ? 1 : -1);
+    const outRows: string[] = [];
+    const outPaths: string[] = [];
+    for (const p of pairs) {
+      outRows.push(p[0]);
+      outPaths.push(p[1]);
+    }
+    this.timelineRows = outRows;
+    this.timelinePaths = outPaths;
+    this.dialogTitle = `变更时间线（${outRows.length} 个版本）`;
+    this.dialog = 'timeline';
+    this.setStatus(`变更时间线：${outRows.length} 个历史版本`);
+  }
+
+  /** 用某个历史快照与该文件当前内容做差异（Vcs.FileHistory 的双击比较语义）*/
+  private compareSnapshotWithFile(snapPath: string): void {
+    const dir: string = snapPath.substring(0, snapPath.lastIndexOf('/'));
+    const srcPath: string = FileService.exists(`${dir}/path.txt`) ? FileService.readText(`${dir}/path.txt`).trim() : '';
+    let before: string = '';
+    let after: string = '';
+    try {
+      before = FileService.readText(snapPath);
+      after = srcPath.length > 0 && FileService.exists(srcPath) ? FileService.readText(srcPath) : this.editorSeedText;
+    } catch (e) {
+      this.showToast('读取历史版本失败');
+      return;
+    }
+    const diff: string[] = this.diffLines(before, after);
+    let add: number = 0;
+    let rem: number = 0;
+    for (const r of diff) {
+      if (r.charAt(0) === '+') {
+        add++;
+      } else if (r.charAt(0) === '-') {
+        rem++;
+      }
+    }
+    this.diffRows = diff;
+    this.diffAdded = add;
+    this.diffRemoved = rem;
+    this.diffLeftName = '历史版本';
+    this.diffRightName = srcPath.length > 0 ? srcPath.substring(srcPath.lastIndexOf('/') + 1) : '当前内容';
+    this.dialogTitle = `差异：历史版本 ↔ ${this.diffRightName}`;
+    this.dialog = 'diffView';
+    this.setStatus(`历史版本比较：+${add} 行 / -${rem} 行`);
   }
 
   /** 打开当前文件的本地历史 */
@@ -4789,6 +4900,10 @@ struct Index {
       // MoreRunToolbarActions：运行相关的更多操作（PyCharm 里是 运行/调试/编辑配置… 的弹层）
       this.dialogTitle = '运行';
       this.dialog = 'runConfig';
+      return;
+    }
+    if (action === 'vcs.fileHistory' || action === 'vcs.log' || action === 'vcs.showHistory') {
+      this.openChangeTimeline();
       return;
     }
     if (action === 'externalSystem.show' || action === 'externalSystem.tasks') {
@@ -8753,6 +8868,8 @@ if (this.settings.showBottomToolWindow) {
             this.FindInFilesContent()
           } else if (this.dialog === 'breakpoints') {
       this.BreakpointsContent()
+    } else if (this.dialog === 'timeline') {
+      this.TimelineContent()
     } else if (this.dialog === 'externals') {
       this.ExternalContent()
     } else if (this.dialog === 'scope') {
@@ -9820,6 +9937,54 @@ if (this.settings.showBottomToolWindow) {
         }
         .width('100%')
         .constraintSize({ maxHeight: 380 })
+        .scrollBar(BarState.Auto)
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 变更时间线内容：点行 → 与该文件当前内容 diff */
+  @Builder
+  TimelineContent() {
+    Column() {
+      if (this.timelineRows.length === 0) {
+        Text('暂无历史版本（每次保存前会自动记录一次快照）')
+          .fontSize(12)
+          .fontColor(this.theme.textDisabled)
+          .padding({ left: 8 })
+      } else {
+        Text('点任意版本 → 与该文件当前内容比较')
+          .fontSize(11.5)
+          .fontColor(this.theme.textDisabled)
+          .padding({ left: 8, top: 2, bottom: 4 })
+        Scroll() {
+          Column() {
+            ForEach(this.timelineRows, (row: string, index: number) => {
+              Row() {
+                Text(row)
+                  .fontSize(12)
+                  .fontFamily(PyFont.mono)
+                  .fontColor(this.theme.textPrimary)
+                  .layoutWeight(1)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
+              .width('100%')
+              .height(26)
+              .padding({ left: 8, right: 8 })
+              .onClick(() => {
+                const p: string = this.timelinePaths[index];
+                this.dialog = '';
+                this.compareSnapshotWithFile(p);
+              })
+            }, (row: string, index: number) => `tl_${index}_${row}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 430 })
         .scrollBar(BarState.Auto)
       }
     }
