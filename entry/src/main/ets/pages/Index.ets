@@ -351,6 +351,8 @@ const PROJECT_AST_SCRIPT: string = [
   'files.sort()',
   'for path in files:',
   '    rel = os.path.relpath(path, root)',
+  '    if len(sys.argv) > 4 and sys.argv[4] and rel != sys.argv[4]:',
+  '        continue',
   '    try:',
   '        text = io.open(path, encoding="utf-8").read()',
   '        tree = ast.parse(text)',
@@ -683,6 +685,9 @@ struct Index {
   @State completeModules: string[] = [];
   @State completeMembers: string[] = [];
   @State completeModule: string = '';
+
+  /** 检查范围：是否只查当前文件 */
+  @State inspectOnlyFile: boolean = false;
 
   /** 当前文件的问题行（gutter 警示标）*/
   @State warnLines: number[] = [];
@@ -2636,15 +2641,20 @@ struct Index {
   }
 
   /** 全工程检查（ast）：未使用导入 */
-  private async runInspection(showDialog: boolean = true): Promise<void> {
+  private async runInspection(showDialog: boolean = true, onlyCurrentFile: boolean = false): Promise<void> {
     const dir: string = `${FileService.context().filesDir}/.harmonyide`;
     FileService.ensureDir(dir);
     FileService.ensureDir(`${FileService.context().filesDir}/.harmonyide`);
     const script: string = `${dir}/ast_project.py`;
     const out: string = `${FileService.context().filesDir}/.harmonyide/inspect.txt`;
     FileService.writeText(script, PROJECT_AST_SCRIPT);
-    this.setStatus('正在检查全工程…');
-    const txt: string = await this.runPyAndRead(script, [this.projectRoot, out, '__inspect__'], out);
+    // 可选：只检查当前文件（问题视图工具栏的「仅当前文件」）
+    let onlyRel: string = '';
+    if (onlyCurrentFile && this.editorFilePath.indexOf(this.settings.lastProjectRoot) === 0) {
+      onlyRel = this.editorFilePath.substring(this.settings.lastProjectRoot.length + 1);
+    }
+    this.setStatus(onlyRel.length > 0 ? `正在检查 ${onlyRel}…` : '正在检查全工程…');
+    const txt: string = await this.runPyAndRead(script, [this.projectRoot, out, '__inspect__', onlyRel], out);
     const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : [];
     this.inspectRows = rows;
     // 同时放进「问题」工具窗（常驻可见、可点行跳转）
@@ -7641,7 +7651,11 @@ struct Index {
                   debugLocals: this.debugLocals,
                   problemRows: this.problemRows,
                   runInspect: () => {
-                    this.runInspection(true);
+                    this.runInspection(true, this.inspectOnlyFile);
+                  },
+                  inspectOnlyFile: this.inspectOnlyFile,
+                  setInspectOnlyFile: (v: boolean) => {
+                    this.inspectOnlyFile = v;
                   },
                   gotoProblem: (row: string) => {
                     const m: RegExpMatchArray | null = row.match(/([^\s:]+):(\d+)\s/);
@@ -7917,7 +7931,11 @@ if (this.settings.showBottomToolWindow) {
                   debugLocals: this.debugLocals,
                   problemRows: this.problemRows,
                   runInspect: () => {
-                    this.runInspection(true);
+                    this.runInspection(true, this.inspectOnlyFile);
+                  },
+                  inspectOnlyFile: this.inspectOnlyFile,
+                  setInspectOnlyFile: (v: boolean) => {
+                    this.inspectOnlyFile = v;
                   },
                   gotoProblem: (row: string) => {
                     const m: RegExpMatchArray | null = row.match(/([^\s:]+):(\d+)\s/);
