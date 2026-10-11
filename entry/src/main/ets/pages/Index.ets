@@ -251,7 +251,7 @@ const PROJECT_COLORS: ProjectColor[] = [
 
 /** 随处搜索（SearchEverywhere）的"操作"栏：label|actionId */
 const SE_ACTIONS: string[] = [
-  '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
+  '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
   '循环补全|ed.hippieComplete', '补全语句|ed.completeStatement',
   '撤销|edit.undo', '重做|edit.redo', '全部保存|file.saveAll',
   '在文件中查找|edit.findInFiles', '随处搜索|edit.searchEverywhere', '转到行|nav.gotoLine',
@@ -1821,6 +1821,34 @@ struct Index {
       j2++;
     }
     return out;
+  }
+
+  /** 与剪贴板比较（PyCharm Diff.CompareWithClipboard）*/
+  private compareWithClipboard(): void {
+    const clip: string = FileService.readClipboard();
+    if (clip.length === 0) {
+      this.showToast('剪贴板为空或无法读取');
+      return;
+    }
+    const mine: string = this.editorSeedText;
+    const rows: string[] = this.diffLines(clip, mine);
+    let add: number = 0;
+    let rem: number = 0;
+    for (const r of rows) {
+      if (r.charAt(0) === '+') {
+        add++;
+      } else if (r.charAt(0) === '-') {
+        rem++;
+      }
+    }
+    this.diffRows = rows;
+    this.diffAdded = add;
+    this.diffRemoved = rem;
+    this.diffLeftName = '剪贴板';
+    this.diffRightName = this.editorFilePath.substring(this.editorFilePath.lastIndexOf('/') + 1);
+    this.dialogTitle = `差异：剪贴板 ↔ ${this.diffRightName}`;
+    this.dialog = 'diffView';
+    this.setStatus(`与剪贴板比较：+${add} 行 / -${rem} 行`);
   }
 
   /** 比较：左侧 = 指定文件（磁盘内容），右侧 = 当前编辑器内容 */
@@ -4268,6 +4296,10 @@ struct Index {
       // MoreRunToolbarActions：运行相关的更多操作（PyCharm 里是 运行/调试/编辑配置… 的弹层）
       this.dialogTitle = '运行';
       this.dialog = 'runConfig';
+      return;
+    }
+    if (action === 'diff.clipboard' || action === 'diff.compareWithClipboard') {
+      this.compareWithClipboard();
       return;
     }
     if (action === 'debug.viewBreakpoints' || action === 'debug.showBreakpoints') {

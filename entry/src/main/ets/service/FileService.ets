@@ -28,6 +28,20 @@ export class FileService {
   }
 
   /** 复制文本到系统剪贴板（失败不影响其它功能）：编辑菜单的「复制路径」用它 */
+  /** 读取系统剪贴板文本（Diff: Compare with Clipboard 用）*/
+  static readClipboard(): string {
+    try {
+      const data = pasteboard.getSystemPasteboard().getDataSync();
+      if (data === undefined) {
+        return '';
+      }
+      return data.getPrimaryText();
+    } catch (err) {
+      FileService.log('readClipboard FAILED');
+      return '';
+    }
+  }
+
   static copyToClipboard(text: string): boolean {
     try {
       const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
