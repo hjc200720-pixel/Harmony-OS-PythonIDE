@@ -270,7 +270,7 @@ const SCOPE_AST_SCRIPT: string = [
   '            nassign = len([n for n in child.body if isinstance(n, (ast.Assign, ast.AnnAssign))])',
   '            ncalls = len([n for n in ast.walk(child) if isinstance(n, ast.Call)])',
   '            args = [a.arg for a in child.args.args]',
-  '            add(\'函数\', child.name, child.lineno, depth, \'参数 %d · 局部赋值 %d · 调用 %d\' % (len(args), nassign, ncalls))',
+  '            add((\'async 函数\' if isinstance(child, ast.AsyncFunctionDef) else \'函数\'), child.name, child.lineno, depth, \'参数 %d · 局部赋值 %d · 调用 %d\' % (len(args), nassign, ncalls))',
   '            walk(child, depth + 1)',
   '        else:',
   '            walk(child, depth)',
@@ -2465,6 +2465,11 @@ struct Index {
 
   /** 结构符号在活动文件里的行号（供"编辑源"跳转） */
   private lineOfSymbol(name: string): number {
+    // ast 结构行形如「ƒ  greet    L6」：先取行号后缀（正则结构行没有行号，走原逻辑）
+    const mLine: RegExpMatchArray | null = name.match(/L(\d+)\s*$/);
+    if (mLine !== null) {
+      return Number.parseInt(mLine[1], 10);
+    }
     const tab: EditorTab | undefined = this.activeTab();
     if (tab === undefined || name.length === 0) {
       return 0;
@@ -3215,6 +3220,49 @@ struct Index {
       }
     }
     this.liveStructure = out;
+    // 异步改用 ast 真解析覆盖（能给出真实嵌套层级与行号）；失败则保留正则结果
+    this.refreshAstStructure();
+  }
+
+  /** 用运行时 Python ast 刷新 Structure 面板（真解析：嵌套、async、装饰器都不会漏）*/
+  private async refreshAstStructure(): Promise<void> {
+    const file: string = this.editorFilePath;
+    if (file.length === 0) {
+      return;
+    }
+    try {
+      const dir: string = `${FileService.context().filesDir}/.harmonyide`;
+      FileService.ensureDir(dir);
+      FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
+      const script: string = `${dir}/ast_scope.py`;
+      const out: string = `${this.projectRoot}/.harmonyide/scope.txt`;
+      FileService.writeText(script, SCOPE_AST_SCRIPT);
+      await PyRuntimeService.run(script, [file, out]);
+      if (!FileService.exists(out)) {
+        return;
+      }
+      const txt: string = FileService.readText(out);
+      const rows: string[] = txt.split('\n');
+      const outRows: string[] = [];
+      for (const row of rows) {
+        const m: RegExpMatchArray | null = row.match(/^(\s*)(类|函数|async 函数)\s+([A-Za-z_][A-Za-z0-9_]*)\s+L(\d+)/);
+        if (m === null) {
+          continue;
+        }
+        const indent: string = m[1].substring(1);
+        const kind: string = m[2];
+        const name: string = m[3];
+        const line: string = m[4];
+        const prefix: string = kind === '类' ? 'C' : (kind === 'async 函数' ? 'ƒa' : 'ƒ');
+        outRows.push(`${indent}${prefix}  ${name}    L${line}`);
+      }
+      if (outRows.length > 0) {
+        this.liveStructure = outRows;
+        FileService.log(`ast structure rows=${outRows.length}`);
+      }
+    } catch (e) {
+      FileService.log('ast structure failed');
+    }
   }
 
   /** 文件结构（PyCharm 的 Structure 工具窗轻量版）：扫描当前文件的导入/类/函数 */
