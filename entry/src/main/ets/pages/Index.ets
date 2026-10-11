@@ -19,6 +19,7 @@ import {
   isExcludedDirName
 } from '../model/Models';
 import { FileService } from '../service/FileService';
+import { AccountService, AccountProfile, AccountResult } from '../service/AccountService';
 import { SettingsService } from '../service/SettingsService';
 import { PyRuntimeService } from '../service/PyRuntimeService';
 import { CodeEditor, CodeEditorController } from '../view/CodeEditor';
@@ -917,6 +918,10 @@ struct Index {
 
   // ── 弹窗 ───────────────────────────────────────────────────────────────
   @State dialog: string = '';
+  // ── 华为账号（Account Kit）──
+  @State accountProfile: AccountProfile = new AccountProfile();
+  @State accountMessage: string = '';
+  @State accountBusy: boolean = false;
   @State dialogTitle: string = '';
   @State inputValue: string = '';
   @State dialogTarget: string = '';
@@ -6683,6 +6688,10 @@ struct Index {
       this.dialog = 'settings';
       return;
     }
+    if (action === 'help.account') {
+      this.openAccount();
+      return;
+    }
     if (action === 'help.about') {
       // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
       this.dialogTitle = '';
@@ -9708,6 +9717,8 @@ if (this.settings.showBottomToolWindow) {
             this.SettingsContent()
           } else if (this.dialog === 'customizeUI') {
             this.CustomizeUIContent()
+          } else if (this.dialog === 'account') {
+            this.AccountContent()
           } else if (this.dialog === 'toolWindows') {
             this.ToolWindowsContent()
           } else if (this.dialog === 'newFileLang') {
@@ -10770,6 +10781,108 @@ if (this.settings.showBottomToolWindow) {
     }
     .width('100%')
     .height(300)
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 打开华为账号对话框 */
+  private openAccount(): void {
+    this.accountProfile = AccountService.load();
+    this.accountMessage = '';
+    this.dialogTitle = '华为账号';
+    this.dialog = 'account';
+  }
+
+  /** 发起华为账号登录（真实调用 Account Kit；失败时原样报错误码，不假装成功） */
+  private async doAccountLogin(): Promise<void> {
+    if (this.uiContext === undefined) {
+      this.accountMessage = '无法获取应用上下文，账号能力不可用。';
+      return;
+    }
+    this.accountBusy = true;
+    this.accountMessage = '正在唤起华为账号…';
+    const res: AccountResult = await AccountService.login(this.uiContext);
+    this.accountBusy = false;
+    this.accountProfile = res.profile;
+    this.accountMessage = res.ok
+      ? `登录成功（unionID ${res.profile.unionID.slice(0, 6)}…，idToken ${res.profile.hasIdToken ? '已获取' : '未获取'}）`
+      : `${res.message}${res.code !== 0 ? `（错误码 ${res.code}）` : ''}`;
+    this.setStatus(res.ok ? '华为账号：已登录' : `华为账号登录失败：${res.code}`);
+  }
+
+  /** 退出登录（清除本地标识） */
+  private doAccountLogout(): void {
+    AccountService.logout();
+    this.accountProfile = new AccountProfile();
+    this.accountMessage = '已退出登录（本地账号标识已清除）。';
+    this.setStatus('华为账号：已退出');
+  }
+
+  /** 华为账号对话框（登录入口；能力来自系统 Account Kit） */
+  @Builder
+  AccountContent() {
+    Column() {
+      Row() {
+        Text(this.accountProfile.unionID.length > 0 ? '已登录' : '未登录')
+          .fontSize(14)
+          .fontFamily(PyFont.ui)
+          .fontColor(this.accountProfile.unionID.length > 0 ? this.theme.success : this.theme.textPrimary)
+        Text(this.accountProfile.unionID.length > 0 ? `unionID ${this.accountProfile.unionID}` : '使用华为账号登录后可同步设置与云端能力')
+          .fontSize(11.5)
+          .fontFamily(PyFont.mono)
+          .fontColor(this.theme.textSecondary)
+          .margin({ left: 10 })
+          .layoutWeight(1)
+          .maxLines(1)
+      }
+      .width('100%')
+      .margin({ bottom: 10 })
+
+      if (this.accountMessage.length > 0) {
+        Text(this.accountMessage)
+          .fontSize(12)
+          .fontFamily(PyFont.ui)
+          .fontColor(this.accountMessage.indexOf('成功') > 0 ? this.theme.success : this.theme.warning)
+          .width('100%')
+          .margin({ bottom: 10 })
+      }
+
+      Row() {
+        Text(this.accountProfile.unionID.length > 0 ? '重新登录' : '华为账号登录')
+          .fontSize(13)
+          .fontFamily(PyFont.ui)
+          .fontColor('#FFFFFF')
+          .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.accent)
+          .onClick(() => {
+            if (!this.accountBusy) {
+              this.doAccountLogin();
+            }
+          })
+        if (this.accountProfile.unionID.length > 0) {
+          Text('退出登录')
+            .fontSize(13)
+            .fontFamily(PyFont.ui)
+            .fontColor(this.theme.textPrimary)
+            .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+            .borderRadius(4)
+            .backgroundColor(this.theme.buttonBg)
+            .margin({ left: 10 })
+            .onClick(() => {
+              this.doAccountLogout();
+            })
+        }
+      }
+      .width('100%')
+
+      Text('说明：登录由系统「华为账号」服务完成，应用不接触密码。上线前需要在 AppGallery Connect 创建应用、开通「华为账号」服务并登记签名证书指纹，否则会返回 1001502002（应用未授权）。')
+        .fontSize(11)
+        .fontFamily(PyFont.ui)
+        .fontColor(this.theme.textDisabled)
+        .width('100%')
+        .margin({ top: 12 })
+    }
+    .width('100%')
     .alignItems(HorizontalAlign.Start)
   }
 

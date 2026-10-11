@@ -365,6 +365,7 @@ function buildHelpMenu(): PyMenuItem[] {
   return [
     new PyMenuItem('help.findAction', '查找操作(_F)…', 'Ctrl+Shift+A'),
     new PyMenuItem('', '', NO_SHORTCUT),
+    new PyMenuItem('help.account', '华为账号登录…', NO_SHORTCUT),
     new PyMenuItem('help.docs', '帮助(_H)', 'F1'),
     new PyMenuItem('help.gettingStarted', '入门指南(_G)', NO_SHORTCUT),
     new PyMenuItem('help.shortcuts', '键盘快捷键 PDF(_K)', NO_SHORTCUT),
