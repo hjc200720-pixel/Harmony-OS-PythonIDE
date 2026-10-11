@@ -251,7 +251,7 @@ const PROJECT_COLORS: ProjectColor[] = [
 
 /** 随处搜索（SearchEverywhere）的"操作"栏：label|actionId */
 const SE_ACTIONS: string[] = [
-  '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
+  '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
   '循环补全|ed.hippieComplete', '补全语句|ed.completeStatement',
   '撤销|edit.undo', '重做|edit.redo', '保存|file.save', '全部保存|file.saveAll',
   '在文件中查找|edit.findInFiles', '随处搜索|edit.searchEverywhere', '转到行|nav.gotoLine',
@@ -1506,6 +1506,13 @@ struct Index {
   @State paneRatio: number = 0.5;
   /** 新窗格是否放在前侧（向左/向上拆分 = true）——PyCharm SplitChooser 的 SplitLeft/SplitTop */
   @State paneBefore: boolean = false;
+  /** 差异比较（Diff）：行列表 + 增删计数 + 两侧名字 */
+  @State diffRows: string[] = [];
+  @State diffAdded: number = 0;
+  @State diffRemoved: number = 0;
+  @State diffLeftName: string = '';
+  @State diffRightName: string = '';
+
   /** 多窗格分隔条悬停（PyCharm：splitter 悬停时高亮） */
   @State paneDividerHover: boolean = false;
   // 复用已有的 dragStartRatio（第 437 行）：手势起点记录当前比例，offsetX/offsetY 是相对起点的累计值
@@ -1604,6 +1611,17 @@ struct Index {
       FileService.log(`selfcheck hippie prefix=gr candidates=${cand.length} :: ${cand.slice(0, 5).join(',')}`);
       FileService.log(`selfcheck seActions=${SE_ACTIONS.length} tabs=${this.tabs.length} recentFiles=${this.recentFiles.length}`);
       FileService.log(`selfcheck panes split=${this.paneSplit} pane2=${this.pane2Tabs.length} ratio=${this.paneRatio} before=${this.paneBefore}`);
+      const dr: string[] = this.diffLines('a\nb\nc\nd', 'a\nx\nc\nd\ne');
+      let add: number = 0;
+      let rem: number = 0;
+      for (const r of dr) {
+        if (r.charAt(0) === '+') {
+          add++;
+        } else if (r.charAt(0) === '-') {
+          rem++;
+        }
+      }
+      FileService.log(`selfcheck diff rows=${dr.length} removed=${rem} added=${add}`);
     } catch (e) {
       FileService.log(`selfcheck failed ${JSON.stringify(e)}`);
     }
@@ -1647,6 +1665,78 @@ struct Index {
     this.pane2Tabs = [];
     this.persistPanes();
     this.setStatus(all ? '已全部取消拆分' : '已取消拆分');
+  }
+
+  /** 行级差异（LCS 动态规划，用一维数组避免嵌套数组）*/
+  private diffLines(a: string, b: string): string[] {
+    const la: string[] = a.split('\n');
+    const lb: string[] = b.split('\n');
+    const n: number = la.length;
+    const m: number = lb.length;
+    const w: number = m + 1;
+    const dp: number[] = new Array<number>((n + 1) * w).fill(0);
+    for (let i: number = n - 1; i >= 0; i--) {
+      for (let j: number = m - 1; j >= 0; j--) {
+        dp[i * w + j] = la[i] === lb[j]
+          ? dp[(i + 1) * w + (j + 1)] + 1
+          : Math.max(dp[(i + 1) * w + j], dp[i * w + (j + 1)]);
+      }
+    }
+    const out: string[] = [];
+    let i2: number = 0;
+    let j2: number = 0;
+    while (i2 < n && j2 < m) {
+      if (la[i2] === lb[j2]) {
+        out.push(`  ${la[i2]}`);
+        i2++;
+        j2++;
+      } else if (dp[(i2 + 1) * w + j2] >= dp[i2 * w + (j2 + 1)]) {
+        out.push(`- ${la[i2]}`);
+        i2++;
+      } else {
+        out.push(`+ ${lb[j2]}`);
+        j2++;
+      }
+    }
+    while (i2 < n) {
+      out.push(`- ${la[i2]}`);
+      i2++;
+    }
+    while (j2 < m) {
+      out.push(`+ ${lb[j2]}`);
+      j2++;
+    }
+    return out;
+  }
+
+  /** 比较：左侧 = 指定文件（磁盘内容），右侧 = 当前编辑器内容 */
+  private compareActiveWith(path: string): void {
+    let other: string = '';
+    try {
+      other = FileService.readText(path);
+    } catch (e) {
+      this.showToast(`读取失败：${path}`);
+      return;
+    }
+    const mine: string = this.editorSeedText;
+    const rows: string[] = this.diffLines(other, mine);
+    let add: number = 0;
+    let rem: number = 0;
+    for (const r of rows) {
+      if (r.charAt(0) === '+') {
+        add++;
+      } else if (r.charAt(0) === '-') {
+        rem++;
+      }
+    }
+    this.diffRows = rows;
+    this.diffAdded = add;
+    this.diffRemoved = rem;
+    this.diffLeftName = path.substring(path.lastIndexOf('/') + 1);
+    this.diffRightName = this.editorFilePath.substring(this.editorFilePath.lastIndexOf('/') + 1);
+    this.dialogTitle = `差异：${this.diffLeftName} ↔ ${this.diffRightName}`;
+    this.dialog = 'diffView';
+    this.setStatus(`差异：+${add} 行 / -${rem} 行（左=磁盘文件，右=编辑器当前内容）`);
   }
 
   /** 继承关系（PyCharm 的 Hierarchy）：解析当前文件的 class A(B) → "子类 : 父类" */
@@ -1975,6 +2065,15 @@ struct Index {
       }
       return;
     }
+    if (id === 'st.compare') {
+      // PyCharm：比较文件。此处语义为"当前编辑器内容 ↔ 该文件在磁盘上的版本"（可看出未保存的改动）
+      if (this.editorFilePath.length === 0) {
+        this.showToast('当前没有打开的文件');
+        return;
+      }
+      this.compareActiveWith(this.editorFilePath);
+      return;
+    }
     if (id === 'st.hierarchy') {
       this.dialogTitle = '继承层级';
       this.dialog = 'hierarchy';
@@ -2202,10 +2301,18 @@ struct Index {
       this.showToast('该功能需要语义索引 / VCS 集成，本版本尚未实现');
       return;
     }
+    if (id === 'tree.compareTwoFiles' || id === 'tree.compareWithEditor') {
+      if (this.treeMenuPath.length === 0) {
+        this.showToast('请先在工程树中选择一个文件');
+        return;
+      }
+      this.compareActiveWith(this.treeMenuPath);
+      return;
+    }
     if (id === 'tree.associateType' || id === 'tree.restoreExt' || id === 'tree.replaceInFiles'
       || id === 'tree.reformat' || id === 'tree.optimizeImports' || id === 'tree.openInRightSplit'
       || id === 'tree.splitChooser' || id === 'tree.openAssociated' || id === 'tree.goToLinkTarget'
-      || id === 'tree.compareTwoFiles' || id === 'tree.compareWithEditor' || id === 'tree.externalTools'
+      || id === 'tree.externalTools'
       || id === 'tree.vcsHistory' || id === 'tree.vcsCommit' || id === 'tree.vcsPush'
       || id === 'tree.vcsPull') {
       this.showToast('该功能需要 IDE 对应的引擎能力（文件类型注册 / 语义重构 / 差异视图 / VCS 集成），本版本尚未实现');
@@ -3985,6 +4092,14 @@ struct Index {
       // MoreRunToolbarActions：运行相关的更多操作（PyCharm 里是 运行/调试/编辑配置… 的弹层）
       this.dialogTitle = '运行';
       this.dialog = 'runConfig';
+      return;
+    }
+    if (action === 'diff.active' || action === 'diff.compareWithSaved') {
+      if (this.editorFilePath.length === 0) {
+        this.showToast('当前没有打开的文件');
+        return;
+      }
+      this.compareActiveWith(this.editorFilePath);
       return;
     }
     if (action === 'nav.gotoClass' || action === 'edit.gotoClass') {
@@ -7817,7 +7932,9 @@ if (this.settings.showBottomToolWindow) {
             this.RecentFilesContent()
           } else if (this.dialog === 'findInFiles') {
             this.FindInFilesContent()
-          } else if (this.dialog === 'splitChooser') {
+          } else if (this.dialog === 'diffView') {
+      this.DiffContent()
+    } else if (this.dialog === 'splitChooser') {
       this.SplitChooserContent()
     } else if (this.dialog === 'gotoClass') {
       this.ClassesContent()
@@ -8819,6 +8936,42 @@ if (this.settings.showBottomToolWindow) {
         .borderRadius(4)
         .backgroundColor(this.theme.buttonPrimaryBg)
         .onClick(() => this.reinitRuntime())
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 差异内容：一行一条，前缀 '  ' 相同 / '- ' 左侧独有 / '+ ' 右侧独有 */
+  @Builder
+  DiffContent() {
+    Column() {
+      Text(`+${this.diffAdded}  -${this.diffRemoved}   左：${this.diffLeftName}    右：${this.diffRightName}`)
+        .fontSize(11.5)
+        .fontColor(this.theme.textDisabled)
+        .padding({ left: 8, right: 8, top: 2, bottom: 6 })
+      Scroll() {
+        Column() {
+          ForEach(this.diffRows, (row: string, index: number) => {
+            Row() {
+              Text(row)
+                .fontSize(12)
+                .fontFamily(PyFont.mono)
+                .fontColor(row.charAt(0) === '-' ? '#E06C75' : (row.charAt(0) === '+' ? '#98C379' : this.theme.textPrimary))
+                .backgroundColor(row.charAt(0) === '-' ? '#3A2A2C' : (row.charAt(0) === '+' ? '#2A3A2C' : Color.Transparent))
+                .layoutWeight(1)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+            }
+            .width('100%')
+            .height(19)
+          }, (row: string, index: number) => `df_${index}_${row}`)
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+      }
+      .width('100%')
+      .constraintSize({ maxHeight: 480 })
+      .scrollBar(BarState.Auto)
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
