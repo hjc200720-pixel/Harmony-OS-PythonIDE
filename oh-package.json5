@@ -1,0 +1,8 @@
+{
+  "modelVersion": "6.0.2",
+  "name": "harmony-py-ide",
+  "version": "1.0.0",
+  "description": "面向鸿蒙平板与鸿蒙 PC(2in1) 的 Python IDE，内置原生 CPython 运行时",
+  "dependencies": {},
+  "devDependencies": {}
+}

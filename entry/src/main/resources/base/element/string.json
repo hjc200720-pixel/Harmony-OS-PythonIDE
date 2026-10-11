@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Python IDE 主模块"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "鸿蒙 Python 集成开发环境"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Python IDE"
+    }
+  ]
+}

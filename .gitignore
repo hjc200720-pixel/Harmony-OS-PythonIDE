@@ -1,0 +1,17 @@
+/node_modules
+/oh_modules
+/local.properties
+/.idea
+**/build
+/.hvigor
+/.cxx
+**/.cxx
+**/.ninja_deps
+**/.ninja_log
+/.clangd
+/.clang-format
+/.clang-tidy
+**/.preview
+/entry/src/main/resources/rawfile/python/*.zip
+/entry/src/main/cpp/thirdparty/*/libpython*.a
+/entry/src/main/cpp/thirdparty/*/include/

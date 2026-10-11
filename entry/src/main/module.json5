@@ -1,0 +1,64 @@
+{
+  "module": {
+    "name": "entry",
+    "type": "entry",
+    "description": "$string:module_desc",
+    "mainElement": "EntryAbility",
+    // 同一套代码同时支持：鸿蒙平板(tablet) 与 鸿蒙 PC(2in1)
+    "deviceTypes": [
+      "tablet",
+      "2in1"
+    ],
+    "deliveryWithInstall": true,
+    "installationFree": false,
+    "pages": "$profile:main_pages",
+    "abilities": [
+      {
+        "name": "EntryAbility",
+        "srcEntry": "./ets/entryability/EntryAbility.ets",
+        "description": "$string:EntryAbility_desc",
+        "icon": "$media:layered_image",
+        "label": "$string:EntryAbility_label",
+        "startWindowIcon": "$media:startIcon",
+        "startWindowBackground": "$color:start_window_background",
+        "exported": true,
+        // 鸿蒙 PC 上允许自由窗口/分屏/悬浮，平板支持分屏；并支持横竖屏切换
+        "supportWindowMode": [
+          "fullscreen",
+          "split",
+          "floating"
+        ],
+        // PC 自由窗口（电脑模式）下的尺寸约束：低于最小尺寸三栏 IDE 布局不可用
+        "minWindowWidth": 640,
+        "minWindowHeight": 480,
+        // 电脑模式下偏好横向（IDE 三栏布局）
+        "preferMultiWindowOrientation": "landscape",
+        "orientation": "auto_rotation_unspecified",
+        "skills": [
+          {
+            "entities": [
+              "entity.system.home"
+            ],
+            "actions": [
+              "ohos.want.action.home"
+            ]
+          }
+        ]
+      }
+    ],
+    "extensionAbilities": [
+      {
+        "name": "EntryBackupAbility",
+        "srcEntry": "./ets/entrybackupability/EntryBackupAbility.ets",
+        "type": "backup",
+        "exported": false,
+        "metadata": [
+          {
+            "name": "ohos.extension.backup",
+            "resource": "$profile:backup_config"
+          }
+        ]
+      }
+    ]
+  }
+}

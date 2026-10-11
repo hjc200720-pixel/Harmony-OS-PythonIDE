@@ -1,0 +1,6 @@
+{
+  "name": "libpythonbridge.so",
+  "types": "./index.d.ts",
+  "version": "1.0.0",
+  "description": "内嵌 CPython 运行时的 NAPI 桥接模块"
+}

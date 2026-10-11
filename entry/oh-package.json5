@@ -1,0 +1,11 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "Python IDE 主模块：PyCharm 风格 ArkTS 界面 + 原生 CPython 运行时桥接",
+  "main": "",
+  "author": "",
+  "license": "",
+  "dependencies": {
+    "libpythonbridge.so": "file:./src/main/cpp/types/libpythonbridge"
+  }
+}

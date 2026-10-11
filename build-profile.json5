@@ -1,0 +1,59 @@
+{
+  "app": {
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\HUAWEI\\.ohos\\config\\default_HarmonyPyIDE_CD8947EQAByKl-GsBtwOJWnEvGaC74N7XKMiHVgdQjc=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B19FD8A68A16D931AE0BEDDE9681BD8A678C4CA4E4CD32BE003F656496A5691D6758A3C934E2A2E",
+          "profile": "C:\\Users\\HUAWEI\\.ohos\\config\\default_HarmonyPyIDE_CD8947EQAByKl-GsBtwOJWnEvGaC74N7XKMiHVgdQjc=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\HUAWEI\\.ohos\\config\\default_HarmonyPyIDE_CD8947EQAByKl-GsBtwOJWnEvGaC74N7XKMiHVgdQjc=.p12",
+          "storePassword": "0000001B29627E99BD1969D535DFC8FE33534527577A10A7D2AA9F9B0C73A1AAB26F76FD2AD93F41ED7406"
+        }
+      }
+    ],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        // 本机安装的 SDK 为 HarmonyOS 26.0.0（apiVersion 26）。
+        // 注意：DevEco 6 要求这里的写法是 <major>[.<minor>][.<patch>]，
+        // 不能再写旧版的 "6.0.2(22)" 形式。换 SDK 时同步改这两行即可。
+        "compatibleSdkVersion": "26.0.0",
+        "targetSdkVersion": "26.0.0",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}
