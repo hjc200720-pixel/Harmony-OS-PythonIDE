@@ -460,6 +460,27 @@ export class FileService {
         ''
       ].join('\n'));
     }
+    const todoPy: string = `${root}/demo_pkg/todo.py`;
+    if (!FileService.exists(todoPy)) {
+      FileService.writeText(todoPy, [
+        '"""留作演示「重复定义 / 空实现」检查的待办模块。"""',
+        '',
+        '',
+        'def parse(text: str) -> dict:',
+        '    return {"text": text}',
+        '',
+        '',
+        'def parse(text: str) -> dict:',
+        '    """重复定义：与上面同名，会被检出。"""',
+        '    return {"text": text, "again": True}',
+        '',
+        '',
+        'def save(path: str) -> None:',
+        '    """空实现：只有 pass，会被检出。"""',
+        '    pass',
+        ''
+      ].join('\n'));
+    }
     const legacyPy: string = `${root}/demo_pkg/legacy.py`;
     if (!FileService.exists(legacyPy)) {
       FileService.writeText(legacyPy, [
