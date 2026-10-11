@@ -2210,12 +2210,7 @@ struct Index {
     const out: string = `${this.projectRoot}/.harmonyide/deps.txt`;
     FileService.writeText(script, DEPS_SCRIPT);
     this.setStatus('正在读取依赖清单…');
-    try {
-      await PyRuntimeService.run(script, [out]);
-    } catch (e) {
-      FileService.log('deps run failed');
-    }
-    const txt: string = FileService.exists(out) ? FileService.readText(out) : '';
+    const txt: string = await this.runPyAndRead(script, [out], out);
     const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : ['（读取失败：运行时未就绪）'];
     this.extRows = rows;
     this.dialogTitle = `外部系统：依赖清单（${rows.length} 个包）`;
@@ -2228,6 +2223,31 @@ struct Index {
     this.extRows = [];
     this.dialogTitle = '外部系统：任务与依赖';
     this.dialog = 'externals';
+  }
+
+  /** 跑 Python 脚本并等输出文件真正写完（跨进程写文件：run 返回 ≠ 写入完成，必须轮询）*/
+  private async runPyAndRead(scriptPath: string, args: string[], outPath: string): Promise<string> {
+    try {
+      const before: string = FileService.exists(outPath) ? FileService.readText(outPath) : '';
+      await PyRuntimeService.run(scriptPath, args);
+      for (let i: number = 0; i < 30; i++) {
+        await new Promise<void>((resolve: () => void) => {
+          setTimeout(() => {
+            resolve();
+          }, 200);
+        });
+        if (FileService.exists(outPath)) {
+          const now: string = FileService.readText(outPath);
+          if (now.length > 0 && now !== before) {
+            return now;
+          }
+        }
+      }
+      return FileService.exists(outPath) ? FileService.readText(outPath) : '';
+    } catch (e) {
+      FileService.log('runPyAndRead failed');
+      return '';
+    }
   }
 
   /** 作用域视图（ScopeView）：把当前文件交给运行时用 ast 真解析，结果写文件后读回 */
@@ -2244,12 +2264,7 @@ struct Index {
     FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
     FileService.writeText(script, SCOPE_AST_SCRIPT);
     this.setStatus('正在解析作用域（ast）…');
-    try {
-      await PyRuntimeService.run(script, [file, out]);
-    } catch (e) {
-      FileService.log('scope ast run failed');
-    }
-    const txt: string = FileService.exists(out) ? FileService.readText(out) : '';
+    const txt: string = await this.runPyAndRead(script, [file, out], out);
     this.scopeRows = txt.trim().length > 0 ? txt.split('\n') : ['（解析失败：运行时未就绪或语法错误）'];
     this.dialogTitle = `作用域视图：${file.substring(file.lastIndexOf('/') + 1)}（${this.scopeRows.length} 项）`;
     this.dialog = 'scope';
@@ -3440,11 +3455,10 @@ struct Index {
       const script: string = `${dir}/ast_scope.py`;
       const out: string = `${this.projectRoot}/.harmonyide/scope.txt`;
       FileService.writeText(script, SCOPE_AST_SCRIPT);
-      await PyRuntimeService.run(script, [file, out]);
-      if (!FileService.exists(out)) {
+      const txt: string = await this.runPyAndRead(script, [file, out], out);
+      if (txt.length === 0) {
         return;
       }
-      const txt: string = FileService.readText(out);
       const rows: string[] = txt.split('\n');
       const outRows: string[] = [];
       for (const row of rows) {
