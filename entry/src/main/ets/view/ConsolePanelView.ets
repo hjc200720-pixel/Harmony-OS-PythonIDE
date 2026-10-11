@@ -442,39 +442,7 @@ export struct ConsolePanelView {
         Blank().layoutWeight(1)
 
         // 依据 PyCharm 各工具窗的 action group，按当前标签显示对应按钮
-        if (this.activeTab === TAB_DEBUG) {
-      Column() {
-        if (this.debugLines.length === 0) {
-          Text('未在调试中（在行号左侧点一下加断点，再点工具栏的调试按钮）')
-            .fontSize(12)
-            .fontColor(this.theme.textDisabled)
-            .padding({ left: 8, top: 6 })
-        } else {
-          Scroll() {
-            Column() {
-              ForEach(this.debugLines, (line: string, index: number) => {
-                Text(line)
-                  .fontSize(12)
-                  .fontFamily(PyFont.mono)
-                  .fontColor(line.startsWith('·') ? this.theme.debugAccent : this.theme.textPrimary)
-                  .width('100%')
-                  .padding({ left: 8, right: 8 })
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-              }, (line: string, index: number) => `dbg_${index}_${line}`)
-            }
-            .width('100%')
-            .alignItems(HorizontalAlign.Start)
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .scrollBar(BarState.Auto)
-        }
-      }
-      .width('100%')
-      .height('100%')
-      .alignItems(HorizontalAlign.Start)
-    } else if (this.activeTab === TAB_RUN) {
+        if (this.activeTab === TAB_RUN) {
           this.textAction('布局', () => this.restoreLayout())
           this.actionIcon('rerun')
           if (this.running) {
@@ -567,7 +535,39 @@ export struct ConsolePanelView {
       .borderStyle(BorderStyle.Solid)
 
       // ── 内容区 ──────────────────────────────────────
-      if (this.activeTab === TAB_REPL) {
+      if (this.activeTab === TAB_DEBUG) {
+      Column() {
+        if (this.debugLines.length === 0) {
+          Text('未在调试中（在行号左侧点一下加断点，再点工具栏的调试按钮）')
+            .fontSize(12)
+            .fontColor(this.theme.textDisabled)
+            .padding({ left: 8, top: 6 })
+        } else {
+          Scroll() {
+            Column() {
+              ForEach(this.debugLines, (line: string, index: number) => {
+                Text(line)
+                  .fontSize(12)
+                  .fontFamily(PyFont.mono)
+                  .fontColor(line.startsWith('·') ? this.theme.debugAccent : this.theme.textPrimary)
+                  .width('100%')
+                  .padding({ left: 8, right: 8 })
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }, (line: string, index: number) => `dbg2_${index}_${line}`)
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .scrollBar(BarState.Auto)
+        }
+      }
+      .width('100%')
+      .height('100%')
+      .alignItems(HorizontalAlign.Start)
+    } else if (this.activeTab === TAB_REPL) {
         Scroll(this.scroller) {
           this.logLines()
         }
