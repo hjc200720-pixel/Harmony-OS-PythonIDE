@@ -10227,12 +10227,19 @@ if (this.settings.showBottomToolWindow) {
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .onClick(() => {
-                  const m: RegExpMatchArray | null = row.match(/^L(\d+)/);
+                  // 行格式：`定义  文件:行   代码` 或 `用法  文件:行   代码` —— 支持跨文件跳转
+                  const m: RegExpMatchArray | null = row.match(/^(?:定义|用法)\s+([^\s:]+):(\d+)/);
                   if (m !== null) {
-                    const line: number = Number.parseInt(m[1], 10);
+                    const rel: string = m[1];
+                    const line: number = Number.parseInt(m[2], 10);
+                    const target: string = `${this.projectRoot}/${rel}`;
                     this.dialog = '';
+                    if (FileService.exists(target) && target !== this.editorFilePath) {
+                      const nm: string = rel.substring(rel.lastIndexOf('/') + 1);
+                      this.openFile(target, nm);
+                    }
                     this.editorController.revealLine(line);
-                    this.setStatus(`已跳到用法所在行 ${line}`);
+                    this.setStatus(`已跳到 ${rel}:${line}`);
                   }
                 })
             }, (row: string, index: number) => `us_${index}_${row}`)
