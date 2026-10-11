@@ -573,6 +573,9 @@ struct Index {
   /** Evaluate（PyCharm）：输入表达式 + 求值历史 */
   @State evalText: string = '';
   @State debugEvals: string[] = [];
+  /** 问题工具窗的行 */
+  @State problemRows: string[] = [];
+
   /** 全工程检查结果（未使用导入等）*/
   @State inspectRows: string[] = [];
 
@@ -2392,6 +2395,10 @@ struct Index {
     const txt: string = await this.runPyAndRead(script, [this.projectRoot, out, '__inspect__'], out);
     const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : [];
     this.inspectRows = rows;
+    // 同时放进「问题」工具窗（常驻可见、可点行跳转）
+    this.problemRows = rows;
+    this.settings.showBottomToolWindow = true;
+    this.consoleTab = 'problems';
     this.dialogTitle = `检查结果（${rows.length} 条）`;
     this.dialog = 'inspect';
     this.setStatus(rows.length > 0 ? `检查完成：${rows.length} 条` : '检查完成：未发现问题');
@@ -7342,6 +7349,20 @@ struct Index {
                   },
                   evalDebug: () => this.evalDebug(),
                   debugLocals: this.debugLocals,
+                  problemRows: this.problemRows,
+                  gotoProblem: (row: string) => {
+                    const m: RegExpMatchArray | null = row.match(/([^\s:]+):(\d+)\s/);
+                    if (m !== null) {
+                      const rel: string = m[1];
+                      const line: number = Number.parseInt(m[2], 10);
+                      const target: string = `${this.projectRoot}/${rel}`;
+                      if (FileService.exists(target) && target !== this.editorFilePath) {
+                        this.openFile(target, rel.substring(rel.lastIndexOf('/') + 1));
+                      }
+                      this.editorController.revealLine(line);
+                      this.setStatus(`已跳到 ${rel}:${line}`);
+                    }
+                  },
                   watches: this.watches,
                   watchValues: this.watchValues,
                   removeWatch: (name: string) => {
@@ -7601,6 +7622,20 @@ if (this.settings.showBottomToolWindow) {
                   },
                   evalDebug: () => this.evalDebug(),
                   debugLocals: this.debugLocals,
+                  problemRows: this.problemRows,
+                  gotoProblem: (row: string) => {
+                    const m: RegExpMatchArray | null = row.match(/([^\s:]+):(\d+)\s/);
+                    if (m !== null) {
+                      const rel: string = m[1];
+                      const line: number = Number.parseInt(m[2], 10);
+                      const target: string = `${this.projectRoot}/${rel}`;
+                      if (FileService.exists(target) && target !== this.editorFilePath) {
+                        this.openFile(target, rel.substring(rel.lastIndexOf('/') + 1));
+                      }
+                      this.editorController.revealLine(line);
+                      this.setStatus(`已跳到 ${rel}:${line}`);
+                    }
+                  },
                   watches: this.watches,
                   watchValues: this.watchValues,
                   removeWatch: (name: string) => {

@@ -141,6 +141,9 @@ export struct ConsolePanelView {
   @Prop replPrompt: string = '>>> ';
   @Prop interpreterLabel: string = '';
   @Prop problemCount: number = 0;
+  /** 问题列表（可点行跳转到问题处）*/
+  @Prop problemRows: string[] = [];
+  gotoProblem: (row: string) => void = () => {};
   /** Run 工具窗工具条左侧显示的运行配置名 */
   @Prop runConfigName: string = '当前文件';
   /** 工具条「重新运行」 */
@@ -815,7 +818,33 @@ export struct ConsolePanelView {
         .alignItems(HorizontalAlign.Start)
         .backgroundColor(this.theme.consoleBg)
       } else if (this.activeTab === TAB_PROBLEMS) {
-        if (this.problemCount === 0) {
+        if (this.problemRows.length > 0) {
+          Scroll(this.scroller) {
+            Column() {
+              ForEach(this.problemRows, (row: string, index: number) => {
+                Text(row)
+                  .fontSize(CONSOLE_FONT_SIZE)
+                  .fontFamily(PyFont.mono)
+                  .fontColor(this.theme.warning)
+                  .width('100%')
+                  .padding({ left: 4, right: 4, top: 3, bottom: 3 })
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .onClick(() => {
+                    this.gotoProblem(row);
+                  })
+              }, (row: string, index: number) => `pb_${index}_${row}`)
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .padding(CONSOLE_PADDING)
+          .align(Alignment.TopStart)
+          .scrollBar(BarState.Auto)
+          .backgroundColor(this.theme.consoleBg)
+        } else if (this.problemCount === 0) {
           Column() {
             Text('未发现问题')
               .fontSize(CONSOLE_FONT_SIZE)
