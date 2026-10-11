@@ -5950,24 +5950,8 @@ struct Index {
                       showIndentGuides: this.showIndentGuides,
                       breakpoints: this.pendingBreakpoints,
                       debugLine: 0,
-                      // 共享文档：两个窗格写回同一个 tab，另一窗格经 initialText 同步（PyCharm 的分屏行为）
-                      onTextChange: (text: string) => {
-                        FileService.log(`pane2 change len=${text.length}`);
-                        const tab: EditorTab | undefined = this.activeTab();
-                        if (tab !== undefined) {
-                          tab.updateText(text);
-                          if (tab.dirty) {
-                            tab.preview = false;
-                          }
-                          this.tabs = this.tabs.slice();
-                          this.scheduleAutoSave();
-                        }
-                        this.refreshStructure(text);
-                      },
-                      onCursorChange: (line: number, column: number) => {
-                        this.cursorLine = line;
-                        this.cursorColumn = column;
-                      }
+                      // 只读镜像（用户预期：右侧窗格只能看不能改）——共享编辑待有可靠验证手段后再开，见 docs/FEATURE_AUDIT.md 0.34
+                      readOnly: true
                     })
                     .layoutWeight(1)
                   }

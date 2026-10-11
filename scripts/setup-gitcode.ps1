@@ -4,13 +4,17 @@
 #          NOT in .git/config)
 param(
   [string]$User = 'hjc200720',
-  [string]$Repo = 'Harmony-OS-PythonIDE'
+  [string]$Repo = 'Harmony-OS-PythonIDE',
+  [string]$Token = ''      # 也可直接传令牌，避免交互输入
 )
 $ErrorActionPreference = 'Continue'
 $repoDir = Split-Path -Parent $PSScriptRoot
 Set-Location $repoDir
 
-$token = Read-Host -Prompt 'Paste GitCode access token (input hidden is not possible here; paste and press Enter)'
+$token = $Token
+if ([string]::IsNullOrWhiteSpace($token)) {
+  $token = Read-Host -Prompt 'Paste GitCode access token (paste and press Enter)'
+}
 if ([string]::IsNullOrWhiteSpace($token)) { Write-Host 'no token, abort'; exit 1 }
 
 Write-Host '--- 1) try to create the repo via API (ignored if it already exists) ---'
