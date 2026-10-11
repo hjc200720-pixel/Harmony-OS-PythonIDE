@@ -1777,6 +1777,16 @@ struct Index {
     return `${this.projectRoot}/.harmonyide/history/${this.historyHashOf(path)}`;
   }
 
+  /** 毫秒时间戳 → 可读时间（本地历史/时间线显示用）*/
+  private formatStamp(ms: number): string {
+    if (Number.isNaN(ms) || ms <= 0) {
+      return '未知时间';
+    }
+    const d: Date = new Date(ms);
+    const p2: (n: number) => string = (n: number) => n < 10 ? `0${n}` : `${n}`;
+    return `${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+  }
+
   /** 与 historyDirFor 同一套哈希（时间线用它反查旧目录属于哪个文件）*/
   private historyHashOf(path: string): string {
     let h: number = 0;
@@ -1872,7 +1882,7 @@ struct Index {
         if (s.isDir || !s.name.startsWith('snap_')) {
           continue;
         }
-        const ts: string = s.name.substring(5, 24);
+        const ts: string = this.formatStamp(Number.parseInt(s.name.substring(5, 24), 10));
         let lines: number = 0;
         try {
           lines = FileService.readText(`${dirPath}/${s.name}`).split('\n').length;
@@ -1961,7 +1971,7 @@ struct Index {
       } catch (e) {
         lines = 0;
       }
-      rows.push(`${n.name.substring(5, 24)}   ${lines} 行`);
+      rows.push(`${this.formatStamp(Number.parseInt(n.name.substring(5, 24), 10))}   ${lines} 行`);
       paths.push(full);
     }
     this.historyRows = rows;
