@@ -13,13 +13,17 @@ git rev-parse --is-inside-work-tree 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) { Write-Host "not a git repo: $repo"; exit 1 }
 
 $changes = (git status --porcelain | Measure-Object).Count
-if ($changes -eq 0) { Write-Host "no changes, skip ($(Get-Date -Format 'HH:mm:ss'))"; exit 0 }
-
-git add -A
-if ([string]::IsNullOrWhiteSpace($Message)) {
-  $Message = "auto commit $(Get-Date -Format 'yyyy-MM-dd HH:mm') ($changes files)"
+if ($changes -gt 0) {
+  git add -A
+  if ([string]::IsNullOrWhiteSpace($Message)) {
+    $Message = "auto commit $(Get-Date -Format 'yyyy-MM-dd HH:mm') ($changes files)"
+  }
+  git commit -q -m $Message
+  Write-Host "committed $changes file(s)"
+} else {
+  # 无改动：仍要推送（可能有别处产生的未推送提交）
+  Write-Host 'no local changes; ensure remote is up to date'
 }
-git commit -q -m $Message
 
 # 非交互：绝不弹凭据框（后台任务里弹窗会打断用户）
 $env:GIT_TERMINAL_PROMPT = '0'
