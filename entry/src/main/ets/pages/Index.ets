@@ -279,8 +279,28 @@ const SCOPE_AST_SCRIPT: string = [
   'io.open(out, \'w\', encoding=\'utf-8\').write(chr(10).join(rows))',
 ].join('\n');
 
+/** 依赖清单脚本（运行时执行，输出写到文件）*/
+const DEPS_SCRIPT: string = [
+  'import io, sys',
+  'out = sys.argv[1]',
+  'rows = []',
+  'try:',
+  '    import importlib.metadata as md',
+  '    for d in md.distributions():',
+  '        try:',
+  '            name = d.metadata[\'Name\']',
+  '            ver = d.version',
+  '            rows.append((name or \'?\') + \'   \' + (ver or \'?\'))',
+  '        except Exception:',
+  '            pass',
+  'except Exception:',
+  '    pass',
+  'rows.sort(key=lambda s: s.lower())',
+  'io.open(out, \'w\', encoding=\'utf-8\').write(chr(10).join(rows) if rows else \'(未发现已安装包)\')',
+].join('\n');
+
 const SE_ACTIONS: string[] = [
-  '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
+  '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
   '循环补全|ed.hippieComplete', '补全语句|ed.completeStatement',
   '撤销|edit.undo', '重做|edit.redo', '全部保存|file.saveAll',
   '在文件中查找|edit.findInFiles', '随处搜索|edit.searchEverywhere', '转到行|nav.gotoLine',
@@ -437,6 +457,9 @@ struct Index {
   /** Evaluate（PyCharm）：输入表达式 + 求值历史 */
   @State evalText: string = '';
   @State debugEvals: string[] = [];
+  /** 外部系统（ExternalSystem）：依赖清单行 + 外部任务执行结果行 */
+  @State extRows: string[] = [];
+
   /** 作用域视图（ScopeView）：AST 解析出的作用域树行 */
   @State scopeRows: string[] = [];
 
@@ -2025,6 +2048,52 @@ struct Index {
         ctx.fillText(nodes[i], p[0] + 10 * z, p[1] + 22 * z);
       }
     }
+  }
+
+  /** 外部任务（ExternalSystem.TaskMenu 语义）：在真实 PTY 终端里执行命令并回显 */
+  private runExternalTask(cmd: string): void {
+    const t: TerminalService = TerminalService.shared();
+    const ok: boolean = t.start((text: string) => {
+      this.appendEntry('stdout', text);
+    });
+    if (!ok) {
+      this.showToast('终端不可用（PTY 未就绪）');
+      return;
+    }
+    this.settings.showBottomToolWindow = true;
+    this.consoleTab = 'terminal';
+    t.send(cmd);
+    this.dialog = '';
+    this.setStatus(`已在终端执行：${cmd}`);
+  }
+
+  /** 依赖清单（ExternalSystem.DependencyAnalyzer 语义）：用运行时读真实已安装包 */
+  private async loadDependencies(): Promise<void> {
+    const dir: string = `${FileService.context().filesDir}/.harmonyide`;
+    FileService.ensureDir(dir);
+    FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
+    const script: string = `${dir}/pip_list.py`;
+    const out: string = `${this.projectRoot}/.harmonyide/deps.txt`;
+    FileService.writeText(script, DEPS_SCRIPT);
+    this.setStatus('正在读取依赖清单…');
+    try {
+      await PyRuntimeService.run(script, [out]);
+    } catch (e) {
+      FileService.log('deps run failed');
+    }
+    const txt: string = FileService.exists(out) ? FileService.readText(out) : '';
+    const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : ['（读取失败：运行时未就绪）'];
+    this.extRows = rows;
+    this.dialogTitle = `外部系统：依赖清单（${rows.length} 个包）`;
+    this.dialog = 'externals';
+    this.setStatus(`依赖清单：${rows.length} 个包`);
+  }
+
+  /** 打开外部系统面板（任务 + 依赖）*/
+  private openExternalSystem(): void {
+    this.extRows = [];
+    this.dialogTitle = '外部系统：任务与依赖';
+    this.dialog = 'externals';
   }
 
   /** 作用域视图（ScopeView）：把当前文件交给运行时用 ast 真解析，结果写文件后读回 */
@@ -4720,6 +4789,10 @@ struct Index {
       // MoreRunToolbarActions：运行相关的更多操作（PyCharm 里是 运行/调试/编辑配置… 的弹层）
       this.dialogTitle = '运行';
       this.dialog = 'runConfig';
+      return;
+    }
+    if (action === 'externalSystem.show' || action === 'externalSystem.tasks') {
+      this.openExternalSystem();
       return;
     }
     if (action === 'scope.view' || action === 'scope.show') {
@@ -8680,6 +8753,8 @@ if (this.settings.showBottomToolWindow) {
             this.FindInFilesContent()
           } else if (this.dialog === 'breakpoints') {
       this.BreakpointsContent()
+    } else if (this.dialog === 'externals') {
+      this.ExternalContent()
     } else if (this.dialog === 'scope') {
       this.ScopeContent()
     } else if (this.dialog === 'graph') {
@@ -9739,6 +9814,87 @@ if (this.settings.showBottomToolWindow) {
             .width('100%')
             .height(26)
             .padding({ left: 8, right: 8 })
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 380 })
+        .scrollBar(BarState.Auto)
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 外部系统内容：外部任务（终端执行）+ 依赖清单 */
+  @Builder
+  ExternalContent() {
+    Column() {
+      Text('外部任务（在真实终端中执行）')
+        .fontSize(11.5)
+        .fontColor(this.theme.textDisabled)
+        .padding({ left: 8, top: 4, bottom: 2 })
+      Row() {
+        Text('Python 版本')
+          .fontSize(12)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+          .margin({ right: 6 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.buttonBg)
+          .onClick(() => {
+            this.runExternalTask('python -V');
+          })
+        Text('编译检查')
+          .fontSize(12)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+          .margin({ right: 6 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.buttonBg)
+          .onClick(() => {
+            this.runExternalTask(`python -m py_compile "${this.editorFilePath}"`);
+          })
+        Text('统计行数')
+          .fontSize(12)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+          .margin({ right: 6 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.buttonBg)
+          .onClick(() => {
+            this.runExternalTask(`find "${this.projectRoot}" -name "*.py" | xargs wc -l`);
+          })
+        Text('读取依赖清单')
+          .fontSize(12)
+          .fontColor(this.theme.textOnAccent)
+          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.buttonPrimaryBg)
+          .onClick(() => {
+            this.loadDependencies();
+          })
+      }
+      .width('100%')
+      .padding({ left: 8, right: 8, top: 2, bottom: 6 })
+      if (this.extRows.length > 0) {
+        Text('依赖清单')
+          .fontSize(11.5)
+          .fontColor(this.theme.textDisabled)
+          .padding({ left: 8, top: 2, bottom: 2 })
+        Scroll() {
+          Column() {
+            ForEach(this.extRows, (row: string, index: number) => {
+              Text(row)
+                .fontSize(12)
+                .fontFamily(PyFont.mono)
+                .fontColor(this.theme.textPrimary)
+                .width('100%')
+                .padding({ left: 16, right: 8 })
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+            }, (row: string, index: number) => `dep_${index}_${row}`)
           }
           .width('100%')
           .alignItems(HorizontalAlign.Start)

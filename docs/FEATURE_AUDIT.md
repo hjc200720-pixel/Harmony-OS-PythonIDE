@@ -1060,3 +1060,28 @@ ScopeViewPopupMenu 里可做的那几项（展开/折叠/跳到定义）。
 
 **价值**：结构面板、转到符号、转到类、继承层级都已具备「升级为 ast 版」的数据基础；
 下一步可把「转到符号」的查询也接到 ast 结果上（含类成员、嵌套函数）。
+
+### 0.61 外部系统（ExternalSystem 87）：可行性结论 + 任务/依赖落地并验证
+
+**依据核实**：ExternalSystem 组（intellij.platform.externalSystem.impl.jar + intellij.pycharm.pro.jar）
+    Actions(25) · ActionsToolbar(12) · RunConfigurationMenu(10) · TaskMenu(9) · ProjectMenu(6) ·
+    DependencyAnalyzer.DependencyListGroup/DependencyTreeGroup/UsagesTreeGroup · ProjectRefreshActionGroup · ShowSettingsGroup
+即 Maven/Gradle 式**外部构建系统**集成（任务树、同步、依赖分析）。
+
+**可行性结论**：构建系统集成（同步/导入 Maven-Gradle 工程、依赖树解析）在 HarmonyOS 上**不可做** ✗（设备无对应工具链）；
+但两件事可做且有意义 ✓：① **任务执行**（TaskMenu 语义）用已有的真 PTY 终端；② **依赖清单**（DependencyListGroup 语义）
+用运行时通道读**真实已安装包**。
+
+**实现**：
+- 「外部系统：任务与依赖」对话框：4 个外部任务按钮 + 依赖清单区
+  Python 版本（python -V）· 编译检查（python -m py_compile 当前文件）· 统计行数（find … wc -l）→ 都在真实终端执行并回显
+  · 读取依赖清单 → 运行时跑脚本用 importlib.metadata 列出已安装包 → 写文件 → 应用读回展示
+- 入口：随处搜索首屏「外部系统：任务与依赖」
+
+**真机验证**：
+    对话框与 4 个任务按钮齐 ✓
+    点「读取依赖清单」→ 标题「外部系统：依赖清单（1 个包）」✓✓，内容 `pip   25.0.1` ✓✓
+    —— 数字精确（打包的 CPython 确实只装了 pip 25.0.1）
+    验证后「取消」关闭 ✓
+
+**未做（如实）**：构建系统同步/导入 · 依赖树与用法分析 · 运行配置管理 · 项目刷新。
