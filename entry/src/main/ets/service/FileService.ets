@@ -237,10 +237,18 @@ export class FileService {
   }
 
   static remove(path: string): void {
-    if (FileService.isDir(path)) {
-      fs.rmdirSync(path);
-    } else {
-      fs.unlinkSync(path);
+    // rmdirSync 只能删空目录：这里递归删除，并整体容错（清理属于尽力而为，不能打断启动流程）
+    try {
+      if (FileService.isDir(path)) {
+        for (const child of FileService.listDir(path, 1)) {
+          FileService.remove(child.path);
+        }
+        fs.rmdirSync(path);
+      } else {
+        fs.unlinkSync(path);
+      }
+    } catch (err) {
+      FileService.log(`remove FAILED ${path}`);
     }
   }
 

@@ -1027,6 +1027,23 @@ struct Index {
 
   // ── 工程与文件树 ───────────────────────────────────────────────────────
 
+  /** 清理早期版本遗留在工程目录里的中间文件（.harmonyide 与元文件）*/
+  private cleanLegacyArtifacts(projectDir: string): void {
+    if (projectDir.length === 0) {
+      return;
+    }
+    const dir: string = `${projectDir}/.harmonyide`;
+    if (FileService.exists(dir)) {
+      FileService.remove(dir);
+    }
+    for (const meta of ['_undo.txt', '_report.txt']) {
+      const mp: string = `${projectDir}/${meta}`;
+      if (FileService.exists(mp)) {
+        FileService.remove(mp);
+      }
+    }
+  }
+
   private openInitialProject(): void {
     // 工具窗可见性**不跨会话持久化**：启动时一律可见。
     // 之前它被写进设置，用户一旦把项目栏收起来，重启后依然是"编辑区空 + 项目栏不见"的死状态。
@@ -1036,21 +1053,12 @@ struct Index {
     this.dialog = '';
     const root: string = FileService.projectRoot();
     FileService.ensureDir(root);
-    // 早期版本把中间文件写在工程内的 .harmonyide（已迁到应用私有目录），启动时清理工程内残留，保持工程干净
-    const legacyDir: string = `${root}/.harmonyide`;
-    if (FileService.exists(legacyDir)) {
-      FileService.remove(legacyDir);
-    }
-    for (const meta of ['_undo.txt', '_report.txt']) {
-      const mp: string = `${root}/${meta}`;
-      if (FileService.exists(mp)) {
-        FileService.remove(mp);
-      }
-    }
+    // 注意：FileService.projectRoot() 是 PyProjects 父目录，真正的工程目录在下面才知道（last / sample）
     const last: string = this.settings.lastProjectRoot;
     if (last.length > 0 && FileService.isDir(last)) {
       // 示例工程自愈：版本升级后新增的示例文件要补齐（createSampleProject 内是逐文件存在性判断，幂等）
       // 只对示例工程做，避免往用户自己的工程里注入示例文件
+      this.cleanLegacyArtifacts(last);
       FileService.log(`sample heal check last=${last} isSample=${last.indexOf('示例工程') >= 0}`);
       if (last.indexOf('示例工程') >= 0) {
         FileService.createSampleProject(last);
@@ -1060,6 +1068,7 @@ struct Index {
       return;
     }
     const sample: string = `${root}/示例工程`;
+    this.cleanLegacyArtifacts(sample);
     FileService.createSampleProject(sample);
     this.loadProject(sample);
   }
