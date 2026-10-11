@@ -460,6 +460,20 @@ export class FileService {
         ''
       ].join('\n'));
     }
+    const legacyPy: string = `${root}/demo_pkg/legacy.py`;
+    if (!FileService.exists(legacyPy)) {
+      FileService.writeText(legacyPy, [
+        '"""留作演示「未使用导入」检查的旧模块。"""',
+        'import json',
+        'import os',
+        '',
+        '',
+        'def describe() -> str:',
+        '    """只用到 os，因此 json 会被检出为未使用导入。"""',
+        '    return os.name',
+        ''
+      ].join('\n'));
+    }
     const utilsPy: string = `${root}/utils.py`;
     if (!FileService.exists(utilsPy)) {
       FileService.writeText(utilsPy, [

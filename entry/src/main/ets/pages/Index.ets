@@ -356,6 +356,25 @@ const PROJECT_AST_SCRIPT: string = [
   '    except Exception:',
   '        continue',
   '    src_lines = text.splitlines()',
+  '    if symbol == "__inspect__":',
+  '        imported = {}',
+  '        for node in ast.walk(tree):',
+  '            if isinstance(node, ast.Import):',
+  '                for al in node.names:',
+  '                    imported[al.asname or al.name.split(".")[0]] = node.lineno',
+  '            elif isinstance(node, ast.ImportFrom):',
+  '                for al in node.names:',
+  '                    imported[al.asname or al.name] = node.lineno',
+  '        used = set()',
+  '        for node in ast.walk(tree):',
+  '            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):',
+  '                used.add(node.id)',
+  '        for key in imported:',
+  '            if key not in used:',
+  '                ln = imported[key]',
+  '                if ln <= len(src_lines):',
+  '                    rows.append("未使用导入  %s:%d   %s" % (rel, ln, src_lines[ln - 1].strip()))',
+  '        continue',
   '    if symbol:',
   '        for node in ast.walk(tree):',
   '            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == symbol:',
@@ -380,7 +399,7 @@ const PROJECT_AST_SCRIPT: string = [
 ].join('\n');
 
 const SE_ACTIONS: string[] = [
-  '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy', '查找用法|edit.findUsages', '变更时间线|vcs.fileHistory', '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active',
+  '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy', '查找用法|edit.findUsages', '检查未使用导入|code.inspect', '变更时间线|vcs.fileHistory', '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active',
   '循环补全|ed.hippieComplete', '补全语句|ed.completeStatement',
   '撤销|edit.undo', '重做|edit.redo', '全部保存|file.saveAll',
   '在文件中查找|edit.findInFiles', '随处搜索|edit.searchEverywhere', '转到行|nav.gotoLine',
@@ -537,6 +556,9 @@ struct Index {
   /** Evaluate（PyCharm）：输入表达式 + 求值历史 */
   @State evalText: string = '';
   @State debugEvals: string[] = [];
+  /** 全工程检查结果（未使用导入等）*/
+  @State inspectRows: string[] = [];
+
   /** Structure 面板范围：file = 当前文件；project = 全工程 */
   @State structureScope: string = 'file';
   @State projectPanelRows: string[] = [];
@@ -2339,6 +2361,23 @@ struct Index {
     this.setStatus(rows.length > 0 && rows[0].indexOf('类 ') === 0
       ? `继承层级：${rows.length} 行（ast）`
       : '当前文件没有类定义');
+  }
+
+  /** 全工程检查（ast）：未使用导入 */
+  private async runInspection(): Promise<void> {
+    const dir: string = `${FileService.context().filesDir}/.harmonyide`;
+    FileService.ensureDir(dir);
+    FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
+    const script: string = `${dir}/ast_project.py`;
+    const out: string = `${this.projectRoot}/.harmonyide/inspect.txt`;
+    FileService.writeText(script, PROJECT_AST_SCRIPT);
+    this.setStatus('正在检查全工程…');
+    const txt: string = await this.runPyAndRead(script, [this.projectRoot, out, '__inspect__'], out);
+    const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : [];
+    this.inspectRows = rows;
+    this.dialogTitle = `检查结果（${rows.length} 条）`;
+    this.dialog = 'inspect';
+    this.setStatus(rows.length > 0 ? `检查完成：${rows.length} 条` : '检查完成：未发现问题');
   }
 
   /** 跨文件转到类：列出全工程的类（含所在文件与基类）*/
@@ -5148,6 +5187,10 @@ struct Index {
       // MoreRunToolbarActions：运行相关的更多操作（PyCharm 里是 运行/调试/编辑配置… 的弹层）
       this.dialogTitle = '运行';
       this.dialog = 'runConfig';
+      return;
+    }
+    if (action === 'code.inspect' || action === 'code.inspectUnusedImports') {
+      this.runInspection();
       return;
     }
     if (action === 'edit.findUsages' || action === 'edit.usages') {
@@ -9175,6 +9218,8 @@ if (this.settings.showBottomToolWindow) {
             this.FindInFilesContent()
           } else if (this.dialog === 'breakpoints') {
       this.BreakpointsContent()
+    } else if (this.dialog === 'inspect') {
+      this.InspectContent()
     } else if (this.dialog === 'gotoclass') {
       this.GoToClassContent()
     } else if (this.dialog === 'usages') {
@@ -10248,6 +10293,56 @@ if (this.settings.showBottomToolWindow) {
         }
         .width('100%')
         .constraintSize({ maxHeight: 380 })
+        .scrollBar(BarState.Auto)
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 检查结果内容：点行跳到该文件的问题处 */
+  @Builder
+  InspectContent() {
+    Column() {
+      if (this.inspectRows.length === 0) {
+        Text('未发现问题')
+          .fontSize(12)
+          .fontColor(this.theme.textDisabled)
+          .padding({ left: 8 })
+      } else {
+        Scroll() {
+          Column() {
+            ForEach(this.inspectRows, (row: string, index: number) => {
+              Text(row)
+                .fontSize(12)
+                .fontFamily(PyFont.mono)
+                .fontColor(this.theme.warning)
+                .width('100%')
+                .height(26)
+                .padding({ left: 8, right: 8 })
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .onClick(() => {
+                  const m: RegExpMatchArray | null = row.match(/([^\s:]+):(\d+)\s/);
+                  if (m !== null) {
+                    const rel: string = m[1];
+                    const line: number = Number.parseInt(m[2], 10);
+                    const target: string = `${this.projectRoot}/${rel}`;
+                    this.dialog = '';
+                    if (FileService.exists(target) && target !== this.editorFilePath) {
+                      this.openFile(target, rel.substring(rel.lastIndexOf('/') + 1));
+                    }
+                    this.editorController.revealLine(line);
+                    this.setStatus(`已跳到 ${rel}:${line}`);
+                  }
+                })
+            }, (row: string, index: number) => `ins_${index}_${row}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 420 })
         .scrollBar(BarState.Auto)
       }
     }
