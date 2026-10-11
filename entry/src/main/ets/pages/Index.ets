@@ -283,7 +283,19 @@ const SCOPE_AST_SCRIPT: string = [
   'for (kind, name, line, depth, extra) in defs:',
   '    nref = counts.get(name, 0)',
   '    rows.append((\'  \' * depth) + kind + \' \' + name + \'   L\' + str(line) + (\'   \' + extra if extra else \'\') + \' · 被引用 %d\' % nref)',
-  'io.open(out, \'w\', encoding=\'utf-8\').write(chr(10).join(rows))',
+  'target = sys.argv[3] if len(sys.argv) > 3 else \'\'',
+  'if target:',
+  '    src_lines = text.splitlines()',
+  '    found = []',
+  '    for node in ast.walk(tree):',
+  '        if isinstance(node, ast.Name) and node.id == target and isinstance(node.ctx, ast.Load):',
+  '            found.append(\'L%d   %s\' % (node.lineno, src_lines[node.lineno - 1].strip()))',
+  '        elif isinstance(node, ast.Attribute) and node.attr == target:',
+  '            found.append(\'L%d   %s\' % (node.lineno, src_lines[node.lineno - 1].strip()))',
+  '    found.sort()',
+  '    io.open(out, \'w\', encoding=\'utf-8\').write(chr(10).join(found) if found else \'(无用法)\')',
+  'else:',
+  '    io.open(out, \'w\', encoding=\'utf-8\').write(chr(10).join(rows))',
 ].join('\n');
 
 /** 依赖清单脚本（运行时执行，输出写到文件）*/
@@ -307,7 +319,7 @@ const DEPS_SCRIPT: string = [
 ].join('\n');
 
 const SE_ACTIONS: string[] = [
-  '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy', '变更时间线|vcs.fileHistory', '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active',
+  '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy', '查找用法|edit.findUsages', '变更时间线|vcs.fileHistory', '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active',
   '循环补全|ed.hippieComplete', '补全语句|ed.completeStatement',
   '撤销|edit.undo', '重做|edit.redo', '全部保存|file.saveAll',
   '在文件中查找|edit.findInFiles', '随处搜索|edit.searchEverywhere', '转到行|nav.gotoLine',
@@ -464,6 +476,10 @@ struct Index {
   /** Evaluate（PyCharm）：输入表达式 + 求值历史 */
   @State evalText: string = '';
   @State debugEvals: string[] = [];
+  /** 查找用法：当前选中的符号 + 用法行 */
+  @State usagesSymbol: string = '';
+  @State usagesRows: string[] = [];
+
   /** 变更时间线（Vcs.FileHistory）：显示行 + 对应快照路径 */
   @State timelineRows: string[] = [];
   @State timelinePaths: string[] = [];
@@ -2223,6 +2239,29 @@ struct Index {
     this.extRows = [];
     this.dialogTitle = '外部系统：任务与依赖';
     this.dialog = 'externals';
+  }
+
+  /** 查找用法（PyCharm 的 Find Usages）：用 ast 列出该符号的每一处引用 */
+  private async findUsages(symbol: string): Promise<void> {
+    const file: string = this.editorFilePath;
+    if (file.length === 0 || symbol.length === 0) {
+      this.showToast('当前没有可分析的文件');
+      return;
+    }
+    const dir: string = `${FileService.context().filesDir}/.harmonyide`;
+    FileService.ensureDir(dir);
+    FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
+    const script: string = `${dir}/ast_scope.py`;
+    const out: string = `${this.projectRoot}/.harmonyide/usages.txt`;
+    FileService.writeText(script, SCOPE_AST_SCRIPT);
+    this.setStatus(`正在查找 ${symbol} 的用法…`);
+    const txt: string = await this.runPyAndRead(script, [file, out, symbol], out);
+    const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : ['(无用法)'];
+    this.usagesSymbol = symbol;
+    this.usagesRows = rows;
+    this.dialogTitle = `查找用法：${symbol}（${rows.length} 处）`;
+    this.dialog = 'usages';
+    this.setStatus(`${symbol} 的用法：${rows.length} 处`);
   }
 
   /** 跑 Python 脚本并等输出文件真正写完（跨进程写文件：run 返回 ≠ 写入完成，必须轮询）*/
@@ -4958,6 +4997,13 @@ struct Index {
       // MoreRunToolbarActions：运行相关的更多操作（PyCharm 里是 运行/调试/编辑配置… 的弹层）
       this.dialogTitle = '运行';
       this.dialog = 'runConfig';
+      return;
+    }
+    if (action === 'edit.findUsages' || action === 'edit.usages') {
+      this.usagesSymbol = '';
+      this.usagesRows = [];
+      this.dialogTitle = '查找用法';
+      this.dialog = 'usages';
       return;
     }
     if (action === 'vcs.fileHistory' || action === 'vcs.log' || action === 'vcs.showHistory') {
@@ -8926,6 +8972,8 @@ if (this.settings.showBottomToolWindow) {
             this.FindInFilesContent()
           } else if (this.dialog === 'breakpoints') {
       this.BreakpointsContent()
+    } else if (this.dialog === 'usages') {
+      this.UsagesContent()
     } else if (this.dialog === 'timeline') {
       this.TimelineContent()
     } else if (this.dialog === 'externals') {
@@ -9995,6 +10043,79 @@ if (this.settings.showBottomToolWindow) {
         }
         .width('100%')
         .constraintSize({ maxHeight: 380 })
+        .scrollBar(BarState.Auto)
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 查找用法内容：未选符号时列符号（来自 ast 结构），选中后列用法（点用法跳行）*/
+  @Builder
+  UsagesContent() {
+    Column() {
+      if (this.usagesRows.length === 0) {
+        Text('点一个符号查看它的用法')
+          .fontSize(11.5)
+          .fontColor(this.theme.textDisabled)
+          .padding({ left: 8, top: 2, bottom: 4 })
+        Scroll() {
+          Column() {
+            ForEach(this.liveStructure, (row: string, index: number) => {
+              Text(row)
+                .fontSize(12)
+                .fontFamily(PyFont.mono)
+                .fontColor(this.theme.textPrimary)
+                .width('100%')
+                .height(26)
+                .padding({ left: 8, right: 8 })
+                .onClick(() => {
+                  const m: RegExpMatchArray | null = row.match(/([A-Za-z_][A-Za-z0-9_]*)\s+L\d+/);
+                  if (m !== null) {
+                    this.findUsages(m[1]);
+                  }
+                })
+            }, (row: string, index: number) => `fu_${index}_${row}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 420 })
+        .scrollBar(BarState.Auto)
+      } else {
+        Text(`${this.usagesSymbol} 的用法（点行跳转）`)
+          .fontSize(11.5)
+          .fontColor(this.theme.textDisabled)
+          .padding({ left: 8, top: 2, bottom: 4 })
+        Scroll() {
+          Column() {
+            ForEach(this.usagesRows, (row: string, index: number) => {
+              Text(row)
+                .fontSize(12)
+                .fontFamily(PyFont.mono)
+                .fontColor(this.theme.textPrimary)
+                .width('100%')
+                .height(26)
+                .padding({ left: 8, right: 8 })
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .onClick(() => {
+                  const m: RegExpMatchArray | null = row.match(/^L(\d+)/);
+                  if (m !== null) {
+                    const line: number = Number.parseInt(m[1], 10);
+                    this.dialog = '';
+                    this.editorController.revealLine(line);
+                    this.setStatus(`已跳到用法所在行 ${line}`);
+                  }
+                })
+            }, (row: string, index: number) => `us_${index}_${row}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 420 })
         .scrollBar(BarState.Auto)
       }
     }
