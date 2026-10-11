@@ -833,8 +833,10 @@ struct Index {
     if (last.length > 0 && FileService.isDir(last)) {
       // 示例工程自愈：版本升级后新增的示例文件要补齐（createSampleProject 内是逐文件存在性判断，幂等）
       // 只对示例工程做，避免往用户自己的工程里注入示例文件
+      FileService.log(`sample heal check last=${last} isSample=${last.indexOf('示例工程') >= 0}`);
       if (last.indexOf('示例工程') >= 0) {
         FileService.createSampleProject(last);
+        FileService.log(`sample heal done models=${FileService.exists(`${last}/demo_pkg/models.py`)}`);
       }
       this.loadProject(last);
       return;

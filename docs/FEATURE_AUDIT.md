@@ -1248,3 +1248,25 @@ ScopeViewPopupMenu 里可做的那几项（展开/折叠/跳到定义）。
 待查方向：① lastProjectRoot 里保存的路径是否与「示例工程」字面一致（中文是否被转义）；
 ② createSampleProject 里新块是否真的执行（加日志）；③ 工程树是否在自愈后才构建。
 继承层级本体的显示同样**尚未取得真机证据**。
+
+### 0.70 ★ 继承层级 ast 化真机验证通过（0.69 的账结清）+ 第 10 条教训
+
+**0.69 的「未通过」其实是验证方法错误，不是功能缺陷** —— 诊断日志给出决定性证据：
+    sample heal check last=/data/storage/el2/base/haps/entry/files/PyProjects/示例工程 isSample=true ✓
+    sample heal done models=true  ✓✓（文件确实创建成功）
+而工程树 dump 只有 main.py / utils.py —— 因为 **demo_pkg 目录是折叠的**，models.py 在里面根本没被渲染。
+展开 demo_pkg 后：`__init__.py / models.py / main.py / utils.py` ✓。
+
+**真机验证（最终）**：打开 models.py → 继承层级：
+    类 Animal  L4  基类 (无) / 方法 __init__ L7 / 方法 speak L10 ✓
+    类 Dog  L14  基类 Animal / 方法 speak L17 / 方法 fetch L20 ✓
+        ← 继承 Animal.__init__ L7、← 继承 Animal.speak L10 ✓✓（继承来的方法，正则版给不出）
+    类 Cat  L24  基类 Animal / 方法 speak L25 ✓
+    状态栏「继承层级：12 行（ast）」✓
+    附带：Structure 面板同时显示类层级 + 引用计数（C Animal L4 · 引用 2 / C Dog L14 · 引用 0 …）✓✓
+    验证后关闭对话框 ✓
+
+**第 10 条教训**：**验证要看懂 UI 的折叠/懒渲染** —— 树里存在 ≠ dump 里可见（折叠节点不渲染）；
+本次若先展开再找，就不必多花一轮。此前 0.63/0.66 的教训也属同类：先确认「现象」是不是「观测方式」造成的。
+**另附**：示例工程现在多了 demo_pkg/models.py（Animal/Dog/Cat），并且**旧工程会自动补齐**（示例工程自愈）✓，
+这些文件同时充当 IDE 各功能的真机验证样本。
