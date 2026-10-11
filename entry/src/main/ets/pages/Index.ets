@@ -1825,9 +1825,15 @@ struct Index {
 
   /** 与剪贴板比较（PyCharm Diff.CompareWithClipboard）*/
   private compareWithClipboard(): void {
-    const clip: string = FileService.readClipboard();
+    FileService.readClipboardAsync((clip: string) => {
+      this.compareWithClipboardText(clip);
+    });
+  }
+
+  /** 拿到剪贴板文本后出差异（异步授权回调里调用）*/
+  private compareWithClipboardText(clip: string): void {
     if (clip.length === 0) {
-      this.showToast('剪贴板为空或无法读取');
+      this.showToast('剪贴板为空或未获授权');
       return;
     }
     const mine: string = this.editorSeedText;

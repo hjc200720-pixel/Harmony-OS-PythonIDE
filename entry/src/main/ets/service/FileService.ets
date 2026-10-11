@@ -2,7 +2,7 @@ import { fileIo as fs, picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { util } from '@kit.ArkTS';
-import { pasteboard } from '@kit.BasicServicesKit';
+import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
 import { FileNode } from '../model/Models';
 
 /**
@@ -28,17 +28,32 @@ export class FileService {
   }
 
   /** 复制文本到系统剪贴板（失败不影响其它功能）：编辑菜单的「复制路径」用它 */
-  /** 读取系统剪贴板文本（Diff: Compare with Clipboard 用）*/
-  static readClipboard(): string {
+  /**
+   * 异步读取系统剪贴板文本（Diff: Compare with Clipboard 用）。
+   * 注意：HarmonyOS 上 getDataSync() 会因隐私限制返回空；必须用异步 getData()，
+   * 系统会弹出"允许粘贴"授权，用户同意后才拿到内容。
+   */
+  static readClipboardAsync(onDone: (text: string) => void): void {
     try {
-      const data = pasteboard.getSystemPasteboard().getDataSync();
-      if (data === undefined) {
-        return '';
-      }
-      return data.getPrimaryText();
-    } catch (err) {
-      FileService.log('readClipboard FAILED');
-      return '';
+      pasteboard.getSystemPasteboard().getData((err: BusinessError, data: pasteboard.PasteData) => {
+        if (err) {
+          FileService.log(`readClipboard err=${err.code}`);
+          onDone('');
+          return;
+        }
+        if (data === undefined) {
+          onDone('');
+          return;
+        }
+        try {
+          onDone(data.getPrimaryText());
+        } catch (e2) {
+          onDone('');
+        }
+      });
+    } catch (e) {
+      FileService.log('readClipboard threw');
+      onDone('');
     }
   }
 

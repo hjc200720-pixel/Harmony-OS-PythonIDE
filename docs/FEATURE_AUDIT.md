@@ -77,6 +77,19 @@ Flex({ direction: this.paneSplit === 'v' ? FlexDirection.Column : FlexDirection.
 - 向下拆分 → **上下堆叠** + 状态栏「已向下拆分：标签 main.py 移入第 2 窗格」✓✓
 - 重启后仍为 `split=h pane2=1`（持久化）✓
 
+### 0.42 与剪贴板比较（Diff.CompareWithClipboard）—— 实现完成，被平台剪贴板隐私限制卡住
+
+**实现**：FileService.readClipboardAsync（异步 getData，会走系统允许粘贴授权）→ compareWithClipboardText 出差异；
+入口在随处搜索首屏「与剪贴板比较」。
+
+**验证发现（重要）**：
+- 复制的确成功（系统日志 `HMKeyboard_ClipboardManager: on clipboard update` ✓）
+- 但 `getDataSync()` 与异步 `getData()` 在本机**都拿不到内容**（既不报错也不弹授权，返回空）
+- 因此应用走了「剪贴板为空或未获授权」分支，差异对话框不出现
+
+**结论**：这不是代码缺陷，而是 **HarmonyOS 对应用读取剪贴板的隐私限制**
+（需要系统级 `ohos.permission.READ_PASTEBOARD` 或系统粘贴授权通道，普通应用默认拿不到）。
+**待办**：查目标 API 版本下剪贴板读取的正确授权方式；若确实不可得，则把该入口改为如实提示（而不是让用户以为功能坏了）。
 ### 0.41 断点列表（XDebugger: View Breakpoints）—— 入口与对话框已验证
 
 **实现**：读 breakpoints.json（已有的持久化断点存储）→ 列出 `文件名:行号`；
