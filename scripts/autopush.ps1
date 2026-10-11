@@ -30,8 +30,10 @@ $env:GIT_TERMINAL_PROMPT = '0'
 $env:GCM_INTERACTIVE = 'never'
 $env:GCM_PROVIDER = ''
 
-# 1) 先推 GitHub（主仓库，必须成功）
-git push -q origin main 2>&1 | Out-Null
+# 1) 先推 GitHub（显式 URL，不受 GitCode 影响）
+$github = (git remote get-url --all --push origin | Where-Object { $_ -match 'github' } | Select-Object -First 1)
+if (-not $github) { $github = (git remote get-url origin) }
+git push -q $github main 2>&1 | Out-Null
 $gh = $LASTEXITCODE
 
 # 2) 再单独推 GitCode（容错：凭据失效/网络问题不影响 GitHub，也不弹窗）
