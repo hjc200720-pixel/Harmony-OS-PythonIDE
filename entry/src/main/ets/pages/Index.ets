@@ -541,11 +541,11 @@ const RENAME_UNDO_SCRIPT: string = [
 ].join('\n');
 
 const SE_ACTIONS: string[] = [
-  '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy', '检查未使用导入|code.inspect', '跨文件补全|edit.completeCrossFile', '保存|file.save', '查找用法|edit.findUsages', '重命名符号|refactor.rename', '变更时间线|vcs.fileHistory', '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '比较当前文件与磁盘版本|diff.active',
+  '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '层次结构|nav.hierarchy', '代码检查|code.inspect', '跨文件补全|edit.completeCrossFile', '保存|file.save', '查找用法|edit.findUsages', '重命名符号|refactor.rename', '变更时间线|vcs.fileHistory', '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史记录|history.show', '比较当前文件与磁盘版本|diff.active',
   '循环补全|ed.hippieComplete', '补全语句|ed.completeStatement',
   '撤销|edit.undo', '重做|edit.redo', '全部保存|file.saveAll',
   '在文件中查找|edit.findInFiles', '随处搜索|edit.searchEverywhere', '转到行|nav.gotoLine',
-  '格式化代码|edit.format', '优化导入|edit.optimizeImports', '注释/取消注释|edit.comment',
+  '重新格式化代码|edit.format', '优化导入|edit.optimizeImports', '注释/取消注释|edit.comment',
   '复制当前行|edit.duplicateLine', '运行|run.run', '调试|run.debug', '停止|run.stop',
   '新建文件|file.newFile', '打开项目|file.openProject', '设置|tools.settings',
   '全部收起|ed.foldAll', '全部展开|ed.unfoldAll', '终端|tools.terminal',
@@ -554,7 +554,7 @@ const SE_ACTIONS: string[] = [
 
 /** PyCharm 主菜单的顶级菜单（汉堡按钮弹层列出它们） */
 const MENU_TITLES: string[] = ['文件(F)', '编辑(E)', '视图(V)', '导航(N)', '代码(C)', '重构(R)',
-  '运行(U)', '工具(T)', 'VCS(S)', '窗口(W)', '帮助(H)'];
+  '运行(U)', '工具(T)', '版本控制(V)', '窗口(W)', '帮助(H)'];
 
 /** 顶栏右键菜单尺寸（用于自适应定位/翻转；6 项 + 2 分隔 + 内边距） */
 const TOP_MENU_WIDTH: number = 252;
@@ -3331,7 +3331,7 @@ struct Index {
       return;
     }
     if (id === 'st.hierarchy') {
-      this.dialogTitle = '继承层级';
+      this.dialogTitle = '层次结构';
       this.dialog = 'hierarchy';
       this.loadAstHierarchy();
       return;
@@ -5601,7 +5601,7 @@ struct Index {
       return;
     }
     if (action === 'nav.hierarchy' || action === 'view.hierarchy') {
-      this.dialogTitle = '继承层级';
+      this.dialogTitle = '层次结构';
       this.dialog = 'hierarchy';
       this.loadAstHierarchy();
       return;

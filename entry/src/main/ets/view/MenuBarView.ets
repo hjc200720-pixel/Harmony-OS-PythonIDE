@@ -454,7 +454,7 @@ function buildRefactorMenu(): PyMenuItem[] {
   ];
 }
 
-/** VCS 菜单（实测 PyCharm 有「VCS(S)」） */
+/** VCS 菜单（PyCharm 中文包 group.VcsGroup.text=「版本控制」；英文包为 VCS） */
 function buildVcsMenu(): PyMenuItem[] {
   // 依据 <group id="Vcs.MainMenu"> 原文（含 VcsGlobalGroup / Vcs.Browse / Vcs.Import）
   return [
@@ -523,7 +523,7 @@ function buildMenus(): PyMenuGroup[] {
     new PyMenuGroup('重构(R)', buildRefactorMenu()),
     new PyMenuGroup('运行(U)', buildRunMenu()),
     new PyMenuGroup('工具(T)', buildToolsMenu()),
-    new PyMenuGroup('VCS(S)', buildVcsMenu()),
+    new PyMenuGroup('版本控制(V)', buildVcsMenu()),
     new PyMenuGroup('窗口(W)', buildWindowMenu()),
     new PyMenuGroup('帮助(H)', buildHelpMenu())
   ];
