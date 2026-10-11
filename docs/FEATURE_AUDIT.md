@@ -1442,6 +1442,37 @@ ScopeViewPopupMenu 里可做的那几项（展开/折叠/跳到定义）。
 
 ### 0.82 ★ 跨文件重命名修复并完成往返验证（0.81 的债结清）
 
+### 0.93 ★ 把「书签」从占位做成真功能（真机全流程验证）
+
+**背景**：左栏「书签」面板原先只是占位空态。核查后发现应用**其实早就有书签逻辑**——
+`toggleBookmark()`（对照 PyCharm `ToggleBookmark`）与 `openLocationEntry()` 都在，缺的是**面板没接上真数据** + **没落盘** + **gutter 没标记**。
+这又是一次「界面在但没接线」。
+
+**实现**：
+| 项 | 做法 |
+|---|---|
+| 面板接真数据 | `ToolWindowPanelContent` 对 `panelId==='Bookmarks'` 走 `BookmarksContent()`（真实列表），其余工具窗仍走占位 |
+| 增删 | 面板顶部「＋ 添加当前行书签」+ 独立「清空」；状态栏回报「已添加书签：main.py:23」「已清空全部书签」 |
+| 跳转 | 点列表行 → `openLocationEntry` → 打开文件并 `revealLine`，状态栏「已打开 main.py:23」 |
+| 持久化 | `${filesDir}/bookmarks.json`（与断点同款做法），重启后恢复 |
+| gutter 标记 | 编辑器新增 `@Prop bookmarkLines`，第 23 行 gutter 显示蓝色书签标记；ForEach key 含该书签位（ArkUI 复用陷阱）|
+
+**真机验证（正反两向）**：
+```
+① 点「＋ 添加当前行书签」→ 状态栏『已添加书签：main.py:23』，合计『共 1 处』，列表出现 main.py:23，gutter 出现蓝色标记
+② 点列表行 → 状态栏『已打开 main.py:23』        ✓ 跳转可用
+③ 重启应用 → 仍『共 1 处』                      ✓ 持久化生效
+④ 点「清空」→『共 0 处』+ 状态栏『已清空全部书签』，gutter 标记消失   ✓ 状态还原干净
+```
+截图：`_cache/device/bm_added.jpeg`、`_cache/device/bm_final.jpeg`
+
+**排掉的三个坑（都记下来）**：
+1. **@Builder 参数不具响应式**：`BookmarksContent()` 里若用 `LocationListContent(this.bookmarks, …)` 传参，列表永远显示旧值（计数已是 1 处、列表却仍写「暂无书签」）。
+   改为在 builder 内**直接读 @State** 后立刻正常。
+2. **ArkUI 没有 `Rectangle` 组件**（它是类型）：`Rectangle({width,height})` 编译报「only refers to a type」→ 改用带背景色的 `Column()`。
+3. **行内按钮的点击会被行的 onClick 吞掉**：列表行的「移除」点了没反应；同时行内 `layoutWeight(1)` 还把按钮**挤出了面板可视区**（dump 显示它在 x=2687，已落到右竖条底下）。
+   → 把清空移到**独立一行**并在界面上写明原因。
+
 ## 目标完成度评估（40/40 轮收口）
 
 对照本目标要求逐条核对：

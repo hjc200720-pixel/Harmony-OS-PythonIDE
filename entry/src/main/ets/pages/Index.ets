@@ -4597,6 +4597,13 @@ struct Index {
     this.saveBookmarks();
   }
 
+  /** 清空全部书签（面板上的独立按钮；行内按钮会被行的点击吞掉，故不依赖行内按钮）*/
+  private clearBookmarks(): void {
+    this.bookmarks = [];
+    this.saveBookmarks();
+    this.setStatus('已清空全部书签');
+  }
+
   /** 从列表里移除某个书签 */
   private removeBookmark(entry: string): void {
     this.bookmarks = this.bookmarks.filter((x: string) => x !== entry);
@@ -10697,6 +10704,25 @@ if (this.settings.showBottomToolWindow) {
             .fontFamily(PyFont.ui)
             .fontColor(this.theme.textSecondary)
             .margin({ left: 8 })
+        }
+        .width('100%')
+        .margin({ bottom: 4 })
+        Row() {
+          Text('清空')
+            .fontSize(11.5)
+            .fontFamily(PyFont.ui)
+            .fontColor(this.theme.textPrimary)
+            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+            .borderRadius(4)
+            .backgroundColor(this.theme.buttonBg)
+            .onClick(() => {
+              this.clearBookmarks();
+            })
+          Text('（行内「移除」会被行的跳转点击吞掉，故清空放在此处）')
+            .fontSize(10.5)
+            .fontFamily(PyFont.ui)
+            .fontColor(this.theme.textDisabled)
+            .margin({ left: 6 })
         }
         .width('100%')
         .margin({ bottom: 8 })
