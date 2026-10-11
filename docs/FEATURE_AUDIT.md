@@ -1184,3 +1184,25 @@ ScopeViewPopupMenu 里可做的那几项（展开/折叠/跳到定义）。
 
 **下一步（明确）**：① 把「作用域视图」调回可点位置，用它直接查看设备上 scope.txt 的**原始行**，区分「脚本没跑」还是「跑了但写失败」；
 ② 捕获 PyRuntimeService.run 的输出/错误（重定向到日志），拿到设备的真实报错；③ 修好后重验。
+
+### 0.67 ★ 根因修复：运行时未就绪导致设备侧一直读旧输出（引用计数显示通过）
+
+**根因（诊断日志一击命中，两轮悬案结清）**：
+    runPy start scriptLen=1577 outLen=101              ← 新脚本确实写入了（1577 字符）
+    runPy returned code=-1 stdoutLen=0 stderr=尚未初始化  ← ★ Python 运行时此刻还没初始化完
+    runPy TIMEOUT/UNCHANGED head=模块 main.py L1 总行 18|函数 greet L6   ← 于是沿用第 5 轮的旧输出
+即：**启动期的结构刷新早于运行时初始化完成**，脚本跑不起来，而输出文件是旧的，
+轮询又只在「内容变化」时才返回 ⇒ 一直用旧数据。
+
+**修复**：runPyAndRead 检测到 `code=-1` 或 stderr 含「尚未初始化」时，**每 500ms 重试，最多 20 次（~10s）**。
+
+**真机验证（同一批日志链条完整）**：
+    runPy returned code=0 stderr=（空）                     ✓ 重试后运行成功
+    runPy fresh outLen=117（旧的是 101）                    ✓ 拿到新输出
+    ast structure rows=2                                   ✓
+    结构面板行：`ƒ  greet    L6  ·  引用 1`、`ƒ  main    L10  ·  引用 1`  ✓✓✓
+    —— greet 与 main 各被引用 1 次，与源码完全吻合（print(greet(..)) 一次；if __name__ 里 main() 一次）
+
+**教训（第 8 条）**：**诊断日志要能区分「没跑」「跑失败」「跑成功但读旧文件」三种情况** ——
+本轮把 scriptLen / code / stderr / outLen / head 一并打出来，一次就定位到两轮的悬案。
+另外：凡「启动期触发的异步任务」，都必须考虑依赖（运行时/文件系统）尚未就绪的情况。
