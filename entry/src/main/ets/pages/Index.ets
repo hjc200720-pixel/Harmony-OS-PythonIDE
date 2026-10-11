@@ -684,6 +684,9 @@ struct Index {
   @State completeMembers: string[] = [];
   @State completeModule: string = '';
 
+  /** 当前文件的问题行（gutter 警示标）*/
+  @State warnLines: number[] = [];
+
   /** 问题工具窗的行 */
   @State problemRows: string[] = [];
 
@@ -2646,6 +2649,18 @@ struct Index {
     this.inspectRows = rows;
     // 同时放进「问题」工具窗（常驻可见、可点行跳转）
     this.problemRows = rows;
+    // 当前文件的问题行 → gutter 警示标
+    const cur: string = this.editorFilePath;
+    const curRel: string = cur.indexOf(this.settings.lastProjectRoot) === 0
+      ? cur.substring(this.settings.lastProjectRoot.length + 1) : '';
+    const warns: number[] = [];
+    for (const r of rows) {
+      const m: RegExpMatchArray | null = r.match(/([^\s:]+):(\d+)\s/);
+      if (m !== null && curRel.length > 0 && m[1] === curRel) {
+        warns.push(Number.parseInt(m[2], 10));
+      }
+    }
+    this.warnLines = warns;
     if (!showDialog) {
       // 静默模式（保存触发）：只刷新问题列表，不弹对话框、不强制打开工具窗
       this.setStatus(`已保存 · 检查：${rows.length} 条`);
@@ -7439,6 +7454,7 @@ struct Index {
                   highlightCurrentLine: this.settings.highlightCurrentLine,
                   showIndentGuides: this.showIndentGuides,
                   breakpoints: this.pendingBreakpoints,
+                  warnLines: this.warnLines,
                   debugLine: this.debugLine,
                   controller: this.editorController,
                   // 编辑器内右键 → EditorPopupMenu
@@ -7549,6 +7565,7 @@ struct Index {
                       highlightCurrentLine: false,
                       showIndentGuides: this.showIndentGuides,
                       breakpoints: this.pendingBreakpoints,
+                  warnLines: this.warnLines,
                       debugLine: 0,
                       // 只读镜像（用户预期：右侧窗格只能看不能改）——共享编辑待有可靠验证手段后再开，见 docs/FEATURE_AUDIT.md 0.34
                       readOnly: true
