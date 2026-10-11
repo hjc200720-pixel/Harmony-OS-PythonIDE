@@ -3814,6 +3814,30 @@ struct Index {
     this.warmupRuntime();
   }
 
+  /** 调试页内容：暂停时列出 变量 / 调用栈（XDebugger 的 Variables + Frames）*/
+  private debugPanelLines(): string[] {
+    const out: string[] = [];
+    if (!this.debugging && !this.debugPaused) {
+      return out;
+    }
+    out.push(this.debugPaused
+      ? `已暂停 ${FileService.baseName(this.debugFile)}:${this.debugLine} (${this.debugFunc})`
+      : '运行中…（命中断点后会在此暂停）');
+    out.push(`· 变量（${this.debugLocals.length}）`);
+    for (const pair of this.debugLocals) {
+      if (pair.length >= 2) {
+        out.push(`    ${pair[0]} = ${pair[1]}`);
+      }
+    }
+    out.push(`· 调用栈（${this.debugStack.length}）`);
+    for (const frame of this.debugStack) {
+      if (frame.length >= 3) {
+        out.push(`    ${frame[2]}  ${FileService.baseName(frame[0])}:${frame[1]}`);
+      }
+    }
+    return out;
+  }
+
   private onDebugPause(pause: DebugPause): void {
     this.debugPaused = true;
     this.debugFile = pause.file;
@@ -6350,6 +6374,7 @@ struct Index {
                   theme: this.theme,
                   entries: this.logEntries,
                   activeTab: this.consoleTab,
+                  debugLines: this.debugPanelLines(),
                   running: this.running,
                   replPrompt: '>>> ',
                   interpreterLabel: this.runtime.ready ? `Python ${this.runtime.version}` : 'Python 未就绪',
@@ -6562,6 +6587,7 @@ if (this.settings.showBottomToolWindow) {
                   theme: this.theme,
                   entries: this.logEntries,
                   activeTab: this.consoleTab,
+                  debugLines: this.debugPanelLines(),
                   running: this.running,
                   replPrompt: '>>> ',
                   interpreterLabel: this.runtime.ready ? `Python ${this.runtime.version}` : 'Python 未就绪',

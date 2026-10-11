@@ -70,6 +70,7 @@ const TAB_REPL: string = 'repl';
 const TAB_TERMINAL: string = 'terminal';
 const TAB_PROBLEMS: string = 'problems';
 /** PyCharm 布局配置里的底部工具窗：Version Control / Services 也需要有 */
+const TAB_DEBUG: string = 'debug';
 const TAB_VCS: string = 'vcs';
 const TAB_SERVICES: string = 'services';
 
@@ -104,6 +105,7 @@ class ConsoleTab {
 function buildTabs(): ConsoleTab[] {
   return [
     new ConsoleTab(TAB_RUN, '运行'),
+    new ConsoleTab(TAB_DEBUG, '调试'),
     new ConsoleTab(TAB_VCS, '版本控制'),
     new ConsoleTab(TAB_PROBLEMS, '问题'),
     new ConsoleTab(TAB_TERMINAL, '终端'),
@@ -118,6 +120,8 @@ export struct ConsolePanelView {
   /** entries 变化时触发贴底 */
   @Prop @Watch('onEntriesChanged') entries: LogEntry[] = [];
   @Prop activeTab: string = TAB_RUN;
+  /** 调试页内容（XDebugger 变量/调用栈）：由 Index 侧的调试事件生成 */
+  @Prop debugLines: string[] = [];
   @Prop running: boolean = false;
   @Prop replPrompt: string = '>>> ';
   @Prop interpreterLabel: string = '';
@@ -438,7 +442,39 @@ export struct ConsolePanelView {
         Blank().layoutWeight(1)
 
         // 依据 PyCharm 各工具窗的 action group，按当前标签显示对应按钮
-        if (this.activeTab === TAB_RUN) {
+        if (this.activeTab === TAB_DEBUG) {
+      Column() {
+        if (this.debugLines.length === 0) {
+          Text('未在调试中（在行号左侧点一下加断点，再点工具栏的调试按钮）')
+            .fontSize(12)
+            .fontColor(this.theme.textDisabled)
+            .padding({ left: 8, top: 6 })
+        } else {
+          Scroll() {
+            Column() {
+              ForEach(this.debugLines, (line: string, index: number) => {
+                Text(line)
+                  .fontSize(12)
+                  .fontFamily(PyFont.mono)
+                  .fontColor(line.startsWith('·') ? this.theme.debugAccent : this.theme.textPrimary)
+                  .width('100%')
+                  .padding({ left: 8, right: 8 })
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }, (line: string, index: number) => `dbg_${index}_${line}`)
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .scrollBar(BarState.Auto)
+        }
+      }
+      .width('100%')
+      .height('100%')
+      .alignItems(HorizontalAlign.Start)
+    } else if (this.activeTab === TAB_RUN) {
           this.textAction('布局', () => this.restoreLayout())
           this.actionIcon('rerun')
           if (this.running) {
