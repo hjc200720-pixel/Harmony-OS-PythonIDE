@@ -93,6 +93,15 @@ Flex({ direction: this.paneSplit === 'v' ? FlexDirection.Column : FlexDirection.
 
 **未验**：暂停时「局部变量」「调用栈」两个区块的具体内容（本次 dump 未出现这两个标题，可能在可视区外/需展开）。
 **下一步**：暂停时截图并滚到底部面板，确认变量与栈内容；再补 XDebugger 的 Watches（监视）与 Evaluate（求值）。
+**续查（0.43 之后的发现）**：
+
+1. DebugPanel 的渲染条件原本是 `if (this.debugging)`，而 `debugging` 在**启动请求返回**时就被置回 false（Index.ets 3893），
+   暂停期间面板会消失 → 已改为 `if (this.debugging || this.debugPaused)`（构建通过、已安装）。
+2. 但改后 dump 仍未见「局部变量/调用栈」：说明 `debugPaused` 也已被重置 —— 结合控制台仍显示
+   `已暂停 main.py:11 (main)`，判断**当前的『暂停』更像事件通知而非真正挂起**（脚本随后继续跑完 → 状态复位）。
+3. 因此 DebugPanel 的按钮（继续/单步/步入）是否能真正驱动会话，需要确认原生调试钩子是否**阻塞等待**。
+
+**下一步**：读 entry/src/main/cpp 的 kDebugHookScript，确认暂停语义（阻塞 or 通知）；若为通知，则需加 握手（等待 IDE 的 resume/step 指令）后，变量/栈面板才有稳定数据可显示。
 ### 0.42 与剪贴板比较（Diff.CompareWithClipboard）—— 实现完成，被平台剪贴板隐私限制卡住
 
 **实现**：FileService.readClipboardAsync（异步 getData，会走系统允许粘贴授权）→ compareWithClipboardText 出差异；

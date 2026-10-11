@@ -6310,7 +6310,9 @@ struct Index {
               })
             }
 
-            if (this.debugging) {
+            // 暂停期间也要显示：debugging 会在启动请求返回后立刻变 false，
+            // 但此时会话仍在后台暂停着，变量/调用栈正需要展示（否则面板一闪就没）
+            if (this.debugging || this.debugPaused) {
               this.DebugPanel()
             }
 
