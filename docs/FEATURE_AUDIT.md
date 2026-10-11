@@ -77,6 +77,22 @@ Flex({ direction: this.paneSplit === 'v' ? FlexDirection.Column : FlexDirection.
 - 向下拆分 → **上下堆叠** + 状态栏「已向下拆分：标签 main.py 移入第 2 窗格」✓✓
 - 重启后仍为 `split=h pane2=1`（持久化）✓
 
+### 0.43 调试器：端到端验证通过（并修正 0.41 的错误判断）
+
+**重要修正**：0.41 写的『Frames/Variables 需要 pdb 交互通道、未实现』是**错误判断**。
+实际情况：
+- 原生桥接已有 **debugRun**（`napi_init.cpp` 的 kDebugHookScript）+ `runDebug(path,args,breakpoints,roots)` + debug 事件监听 ✓
+- `DebugPause` 已携带 **locals（局部变量 name/repr）** 与 **stack（调用栈 file/line/func）** ✓
+- DebugPanel 已显示「局部变量（N）」「调用栈（N）」两个区块（Index.ets 7974-8003）✓
+
+**真机端到端验证（截图 + dump）**：
+    行号 11 点击 → 断点红点出现 ✓
+    tb-debug → 『调试会话已启动，共 1 个行断点。』✓
+              → 『已暂停 main.py:11 (main)』✓✓
+    编辑器第 11 行高亮 ✓  运行面板显示 `python .../main.py # 调试模式` ✓
+
+**未验**：暂停时「局部变量」「调用栈」两个区块的具体内容（本次 dump 未出现这两个标题，可能在可视区外/需展开）。
+**下一步**：暂停时截图并滚到底部面板，确认变量与栈内容；再补 XDebugger 的 Watches（监视）与 Evaluate（求值）。
 ### 0.42 与剪贴板比较（Diff.CompareWithClipboard）—— 实现完成，被平台剪贴板隐私限制卡住
 
 **实现**：FileService.readClipboardAsync（异步 getData，会走系统允许粘贴授权）→ compareWithClipboardText 出差异；
