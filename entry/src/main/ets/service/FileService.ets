@@ -408,13 +408,13 @@ export class FileService {
     const mainPy: string = `${root}/main.py`;
     // 示例工程升级：早期版本的 main.py 没有 import utils（缺少跨文件引用样本），发现即重写
     // 版本标记：老版本/被改脏的示例文件会缺少标记，直接重建（示例工程自愈）
-    if (FileService.exists(mainPy) && FileService.readText(mainPy).indexOf('# sample-v3') < 0) {
+    if (FileService.exists(mainPy) && FileService.readText(mainPy).indexOf('# sample-v4') < 0) {
       FileService.writeText(mainPy, '');
     }
     if (!FileService.exists(mainPy) || FileService.readText(mainPy).length === 0) {
       FileService.writeText(mainPy, [
         '"""鸿蒙 Python IDE 示例工程。"""',
-        '# sample-v3',
+        '# sample-v4',
         'import sys',
         'import platform',
         '',
@@ -425,6 +425,8 @@ export class FileService {
         '    return f"你好, {name}!"',
         '',
         '',
+        '# TODO: 演示用待办 —— 会被 TODO 工具窗列出（点击可跳转到本行）',
+        '# FIXME: 演示用修复项（同样会被列出）',
         'def main() -> None:',
         '    print(greet("鸿蒙"))',
         '    print("Python :", sys.version.split()[0])',

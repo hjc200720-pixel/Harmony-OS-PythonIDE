@@ -12489,7 +12489,6 @@ if (this.settings.showBottomToolWindow) {
   @State settingsExpanded: string[] = ['appearance', 'editor', 'project'];
   /** 设置搜索关键字（PyCharm 设置左上角有搜索框） */
   @State settingsSearch: string = '';
-}
 
   /** TODO 工具窗扫描结果（行文本 = "文件:行号  内容"） */
   @State todoItems: TodoItem[] = [];
