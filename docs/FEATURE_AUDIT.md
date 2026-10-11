@@ -77,6 +77,22 @@ Flex({ direction: this.paneSplit === 'v' ? FlexDirection.Column : FlexDirection.
 - 向下拆分 → **上下堆叠** + 状态栏「已向下拆分：标签 main.py 移入第 2 窗格」✓✓
 - 重启后仍为 `split=h pane2=1`（持久化）✓
 
+### 0.36 多窗格第 2 窗格：只读镜像（按用户预期确定）
+
+用户反馈“怎么两边都能修改内容”→ 明确期望是**右侧窗格只读**。
+故把 0.34 的共享编辑回退为 readOnly=true 只读镜像（CodeEditor 禁用输入层 + 隐藏光标）。
+共享编辑（两侧同编同步）标记为**待可靠验证后再开**：自动化环境无法输入文本，
+无法证明“输入 → 两窗格一致”，贸然开启会导致两窗格内容分叉。
+
+### 0.37 双平台托管（GitHub + GitCode）已接通
+
+    origin  fetch : https://github.com/hjc200720-pixel/Harmony-OS-PythonIDE.git
+    origin  push  : GitHub ↑ + https://gitcode.com/hjc200720/Harmony-OS-PythonIDE.git
+
+配置方式：scripts/setup-gitcode.ps1（GitCode API 建库 → git credential approve 存凭据 →
+git remote set-url --add --push 加第二个推送地址 → 推送 → 校验）。
+之后 git push 一次更新两个平台；配 scripts/autopush.ps1 + 计划任务即两边全自动。
+实测：建库 HTTP 200、GitCode hooks [PASSED]、* [new branch] main -> main、两边 HEAD 一致。
 ### 0.34 共享文档（两窗格同编，PyCharm 行为）—— 实现完成，验证未完成
 
 **实现**：第 2 窗格去掉 `readOnly: true`，改挂与第 1 窗格**相同的** `onTextChange` / `onCursorChange`
