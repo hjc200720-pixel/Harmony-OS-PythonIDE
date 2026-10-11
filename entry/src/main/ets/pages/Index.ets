@@ -251,7 +251,7 @@ const PROJECT_COLORS: ProjectColor[] = [
 
 /** 随处搜索（SearchEverywhere）的"操作"栏：label|actionId */
 const SE_ACTIONS: string[] = [
-  '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
+  '本地历史|history.show', '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
   '循环补全|ed.hippieComplete', '补全语句|ed.completeStatement',
   '撤销|edit.undo', '重做|edit.redo', '保存|file.save', '全部保存|file.saveAll',
   '在文件中查找|edit.findInFiles', '随处搜索|edit.searchEverywhere', '转到行|nav.gotoLine',
@@ -1506,6 +1506,10 @@ struct Index {
   @State paneRatio: number = 0.5;
   /** 新窗格是否放在前侧（向左/向上拆分 = true）——PyCharm SplitChooser 的 SplitLeft/SplitTop */
   @State paneBefore: boolean = false;
+  /** 本地历史（Local History）：快照行显示 + 对应文件路径 */
+  @State historyRows: string[] = [];
+  @State historyPaths: string[] = [];
+
   /** 差异比较（Diff）：行列表 + 增删计数 + 两侧名字 */
   @State diffRows: string[] = [];
   @State diffAdded: number = 0;
@@ -1665,6 +1669,81 @@ struct Index {
     this.pane2Tabs = [];
     this.persistPanes();
     this.setStatus(all ? '已全部取消拆分' : '已取消拆分');
+  }
+
+  /** 本地历史目录：<工程根>/.harmonyide/history/<文件名的哈希编码>/ */
+  private historyDirFor(path: string): string {
+    let h: number = 0;
+    for (let i: number = 0; i < path.length; i++) {
+      h = (h * 31 + path.charCodeAt(i)) % 1000000007;
+    }
+    return `${this.projectRoot}/.harmonyide/history/${h}`;
+  }
+
+  /** 保存前把磁盘上的旧内容快照进本地历史（内容相同则不重复快照）*/
+  private snapshotBeforeSave(path: string): void {
+    try {
+      if (!FileService.exists(path)) {
+        return;
+      }
+      const old: string = FileService.readText(path);
+      const dir: string = this.historyDirFor(path);
+      FileService.ensureDir(dir);
+      const nodes: FileNode[] = FileService.listDir(dir, 1);
+      let newest: string = '';
+      let newestTime: number = 0;
+      for (const n of nodes) {
+        if (!n.isDir && n.name.startsWith('snap_')) {
+          const t: number = Number.parseInt(n.name.substring(5, 18), 10);
+          if (!Number.isNaN(t) && t > newestTime) {
+            newestTime = t;
+            newest = `${dir}/${n.name}`;
+          }
+        }
+      }
+      if (newest.length > 0 && FileService.readText(newest) === old) {
+        return;
+      }
+      FileService.writeText(`${dir}/snap_${Date.now()}.txt`, old);
+      FileService.log(`local history snapshot ${path}`);
+    } catch (e) {
+      FileService.log(`snapshot failed ${JSON.stringify(e)}`);
+    }
+  }
+
+  /** 打开当前文件的本地历史 */
+  private openLocalHistory(): void {
+    const path: string = this.editorFilePath;
+    if (path.length === 0) {
+      this.showToast('当前没有打开的文件');
+      return;
+    }
+    const dir: string = this.historyDirFor(path);
+    const nodes: FileNode[] = FileService.exists(dir) ? FileService.listDir(dir, 1) : [];
+    const rows: string[] = [];
+    const paths: string[] = [];
+    const items: FileNode[] = [];
+    for (const n of nodes) {
+      if (!n.isDir && n.name.startsWith('snap_')) {
+        items.push(n);
+      }
+    }
+    items.sort((x: FileNode, y: FileNode) => y.name < x.name ? -1 : 1);
+    for (const n of items) {
+      const full: string = `${dir}/${n.name}`;
+      let lines: number = 0;
+      try {
+        lines = FileService.readText(full).split('\n').length;
+      } catch (e) {
+        lines = 0;
+      }
+      rows.push(`${n.name.substring(5, 24)}   ${lines} 行`);
+      paths.push(full);
+    }
+    this.historyRows = rows;
+    this.historyPaths = paths;
+    this.dialogTitle = `本地历史：${path.substring(path.lastIndexOf('/') + 1)}（${rows.length} 个快照）`;
+    this.dialog = 'localHistory';
   }
 
   /** 行级差异（LCS 动态规划，用一维数组避免嵌套数组）*/
@@ -3388,6 +3467,7 @@ struct Index {
 
   private saveTab(tab: EditorTab): void {
     try {
+      this.snapshotBeforeSave(tab.path);
       FileService.writeText(tab.path, tab.text);
       tab.markSaved(tab.text);
       this.tabs = this.tabs.slice();
@@ -4092,6 +4172,10 @@ struct Index {
       // MoreRunToolbarActions：运行相关的更多操作（PyCharm 里是 运行/调试/编辑配置… 的弹层）
       this.dialogTitle = '运行';
       this.dialog = 'runConfig';
+      return;
+    }
+    if (action === 'history.show' || action === 'vcs.showHistory' || action === 'history.local') {
+      this.openLocalHistory();
       return;
     }
     if (action === 'diff.active' || action === 'diff.compareWithSaved') {
@@ -7932,7 +8016,9 @@ if (this.settings.showBottomToolWindow) {
             this.RecentFilesContent()
           } else if (this.dialog === 'findInFiles') {
             this.FindInFilesContent()
-          } else if (this.dialog === 'diffView') {
+          } else if (this.dialog === 'localHistory') {
+      this.LocalHistoryContent()
+    } else if (this.dialog === 'diffView') {
       this.DiffContent()
     } else if (this.dialog === 'splitChooser') {
       this.SplitChooserContent()
@@ -8936,6 +9022,71 @@ if (this.settings.showBottomToolWindow) {
         .borderRadius(4)
         .backgroundColor(this.theme.buttonPrimaryBg)
         .onClick(() => this.reinitRuntime())
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 本地历史内容：点行 → 与当前编辑器内容比较；点「还原」→ 写回该快照 */
+  @Builder
+  LocalHistoryContent() {
+    Column() {
+      if (this.historyRows.length === 0) {
+        Text('暂无快照（每次保存前会自动记录上一版本）')
+          .fontSize(12)
+          .fontColor(this.theme.textDisabled)
+          .padding({ left: 8 })
+      } else {
+        Scroll() {
+          Column() {
+            ForEach(this.historyRows, (row: string, index: number) => {
+              Row() {
+                Text(row)
+                  .fontSize(12)
+                  .fontFamily(PyFont.mono)
+                  .fontColor(this.theme.textPrimary)
+                  .layoutWeight(1)
+                  .maxLines(1)
+                  .onClick(() => {
+                    const p: string = this.historyPaths[index];
+                    this.dialog = '';
+                    this.compareActiveWith(p);
+                  })
+                Text('还原')
+                  .fontSize(12)
+                  .fontColor(this.theme.funcName)
+                  .padding({ left: 10, right: 6 })
+                  .onClick(() => {
+                    const p: string = this.historyPaths[index];
+                    try {
+                      const text: string = FileService.readText(p);
+                      const tab: EditorTab | undefined = this.activeTab();
+                      if (tab !== undefined) {
+                        this.snapshotBeforeSave(tab.path);
+                        FileService.writeText(tab.path, text);
+                        tab.updateText(text);
+                        tab.dirty = false;
+                        this.tabs = this.tabs.slice();
+                        this.dialog = '';
+                        this.setStatus(`已还原到 ${row.trim()} 的版本`);
+                      }
+                    } catch (e) {
+                      this.showToast('还原失败');
+                    }
+                  })
+              }
+              .width('100%')
+              .height(26)
+              .padding({ left: 8, right: 8 })
+            }, (row: string, index: number) => `lh_${index}_${row}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 420 })
+        .scrollBar(BarState.Auto)
+      }
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
