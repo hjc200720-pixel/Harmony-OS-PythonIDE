@@ -435,8 +435,83 @@ const PROJECT_AST_SCRIPT: string = [
   'io.open(out, "w", encoding="utf-8").write(chr(10).join(rows) if rows else "(未找到)")',
 ].join('\n');
 
+/** 跨文件重命名脚本（ast 精确位置 + 自动备份，可撤销）*/
+const RENAME_AST_SCRIPT: string = [
+  'import ast, io, os, shutil, sys',
+  'root = sys.argv[1]',
+  'old = sys.argv[2]',
+  'new = sys.argv[3]',
+  'backup = sys.argv[4]',
+  'rows = []',
+  'changed = 0',
+  'for dirpath, dirnames, filenames in os.walk(root):',
+  '    for fn in sorted(filenames):',
+  '        if not fn.endswith(".py"):',
+  '            continue',
+  '        path = os.path.join(dirpath, fn)',
+  '        rel = os.path.relpath(path, root)',
+  '        try:',
+  '            text = io.open(path, encoding="utf-8").read()',
+  '            tree = ast.parse(text)',
+  '        except Exception:',
+  '            continue',
+  '        lines = text.split(chr(10))',
+  '        edits = []',
+  '        for node in ast.walk(tree):',
+  '            if isinstance(node, ast.Name) and node.id == old:',
+  '                edits.append((node.lineno, node.col_offset, node.end_col_offset))',
+  '            elif isinstance(node, ast.Attribute) and node.attr == old:',
+  '                edits.append((node.lineno, node.end_col_offset - len(old), node.end_col_offset))',
+  '            elif isinstance(node, ast.arg) and node.arg == old:',
+  '                edits.append((node.lineno, node.col_offset, node.end_col_offset))',
+  '            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == old:',
+  '                ln = node.lineno',
+  '                col = node.col_offset',
+  '                seg = lines[ln - 1][col:]',
+  '                idx = seg.find(old)',
+  '                if idx >= 0:',
+  '                    edits.append((ln, col + idx, col + idx + len(old)))',
+  '        if not edits:',
+  '            continue',
+  '        if not os.path.isdir(backup):',
+  '            os.makedirs(backup)',
+  '        shutil.copyfile(path, os.path.join(backup, rel.replace("/", "__")))',
+  '        byline = {}',
+  '        for (ln, a, b) in edits:',
+  '            byline.setdefault(ln, []).append((a, b))',
+  '        for ln in sorted(byline.keys(), reverse=True):',
+  '            spans = sorted(byline[ln], reverse=True)',
+  '            s = lines[ln - 1]',
+  '            for (a, b) in spans:',
+  '                s = s[:a] + new + s[b:]',
+  '            lines[ln - 1] = s',
+  '        io.open(path, "w", encoding="utf-8").write(chr(10).join(lines))',
+  '        rows.append("%s  %d 处" % (rel, len(edits)))',
+  '        changed = changed + len(edits)',
+  'io.open(os.path.join(backup, "_report.txt"), "w", encoding="utf-8").write(chr(10).join(rows) + (chr(10) + "共 %d 处" % changed))',
+  'print(chr(10).join(rows))',
+].join('\n');
+
+/** 撤销重命名：从备份目录还原文件 */
+const RENAME_UNDO_SCRIPT: string = [
+  'import os, shutil, sys',
+  'root = sys.argv[1]',
+  'backup = sys.argv[2]',
+  'n = 0',
+  'if os.path.isdir(backup):',
+  '    for fn in sorted(os.listdir(backup)):',
+  '        if fn == "_report.txt":',
+  '            continue',
+  '        src = os.path.join(backup, fn)',
+  '        tgt = os.path.join(root, fn.replace("__", "/"))',
+  '        if os.path.isfile(src):',
+  '            shutil.copyfile(src, tgt)',
+  '            n = n + 1',
+  'io.open(os.path.join(backup, "_undo.txt"), "w", encoding="utf-8").write("已还原 %d 个文件" % n)',
+].join('\n');
+
 const SE_ACTIONS: string[] = [
-  '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy', '跨文件补全|edit.completeCrossFile', '保存|file.save', '查找用法|edit.findUsages', '检查未使用导入|code.inspect', '变更时间线|vcs.fileHistory', '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '比较当前文件与磁盘版本|diff.active',
+  '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy', '跨文件补全|edit.completeCrossFile', '重命名符号|refactor.rename', '撤销上次重命名|refactor.renameUndo', '保存|file.save', '查找用法|edit.findUsages', '检查未使用导入|code.inspect', '变更时间线|vcs.fileHistory', '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '比较当前文件与磁盘版本|diff.active',
   '循环补全|ed.hippieComplete', '补全语句|ed.completeStatement',
   '撤销|edit.undo', '重做|edit.redo', '全部保存|file.saveAll',
   '在文件中查找|edit.findInFiles', '随处搜索|edit.searchEverywhere', '转到行|nav.gotoLine',
@@ -593,6 +668,10 @@ struct Index {
   /** Evaluate（PyCharm）：输入表达式 + 求值历史 */
   @State evalText: string = '';
   @State debugEvals: string[] = [];
+  /** 重命名重构：目标符号 + 报告 */
+  @State renameTarget: string = '';
+  @State renameRows: string[] = [];
+
   /** 跨文件补全：当前文件导入的模块 + 选中模块的成员 */
   @State completeModules: string[] = [];
   @State completeMembers: string[] = [];
@@ -2406,6 +2485,52 @@ struct Index {
     this.setStatus(rows.length > 0 && rows[0].indexOf('类 ') === 0
       ? `继承层级：${rows.length} 行（ast）`
       : '当前文件没有类定义');
+  }
+
+  /** 重命名（Refactor.Rename）：本设备无法输入新名字，提供常用命名样式；执行前自动备份，可撤销 */
+  private async applyRename(style: string): Promise<void> {
+    const old: string = this.renameTarget;
+    if (old.length === 0) {
+      return;
+    }
+    let next: string = old;
+    if (style === 'prefix') {
+      next = old.startsWith('my_') ? old : `my_${old}`;
+    } else if (style === 'suffix') {
+      next = `${old}_v2`;
+    } else if (style === 'upper') {
+      next = old.toUpperCase();
+    }
+    const dir: string = `${FileService.context().filesDir}/.harmonyide`;
+    FileService.ensureDir(dir);
+    FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
+    const script: string = `${dir}/ast_rename.py`;
+    const backup: string = `${this.projectRoot}/.harmonyide/rename_backup`;
+    const out: string = `${this.projectRoot}/.harmonyide/rename_report.txt`;
+    FileService.writeText(script, RENAME_AST_SCRIPT);
+    this.setStatus(`正在重命名 ${old} → ${next}…`);
+    const txt: string = await this.runPyAndRead(script, [this.projectRoot, old, next, backup], out);
+    const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : ['(没有找到需要修改的位置)'];
+    this.renameRows = rows;
+    this.dialogTitle = `重命名：${old} → ${next}`;
+    this.dialog = 'rename';
+    this.setStatus(`重命名完成：${old} → ${next}（${rows.length} 个文件）`);
+  }
+
+  /** 撤销上次重命名（从备份还原）*/
+  private async undoRename(): Promise<void> {
+    const dir: string = `${FileService.context().filesDir}/.harmonyide`;
+    FileService.ensureDir(dir);
+    const script: string = `${dir}/ast_rename_undo.py`;
+    const backup: string = `${this.projectRoot}/.harmonyide/rename_backup`;
+    const out: string = `${this.projectRoot}/.harmonyide/rename_undo.txt`;
+    FileService.writeText(script, RENAME_UNDO_SCRIPT);
+    const txt: string = await this.runPyAndRead(script, [this.projectRoot, backup], out);
+    const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : ['(没有可还原的备份)'];
+    this.renameRows = rows;
+    this.dialogTitle = '已撤销上次重命名';
+    this.dialog = 'rename';
+    this.setStatus(rows[0]);
   }
 
   /** 跨文件补全（PyCharm 的基本补全语义）：先列本文件导入的模块，再列该模块的成员 */
@@ -5295,6 +5420,19 @@ struct Index {
       // MoreRunToolbarActions：运行相关的更多操作（PyCharm 里是 运行/调试/编辑配置… 的弹层）
       this.dialogTitle = '运行';
       this.dialog = 'runConfig';
+      return;
+    }
+    if (action === 'refactor.rename') {
+      this.renameTarget = '';
+      this.renameRows = [];
+      this.dialogTitle = '重命名符号（跨文件）';
+      this.dialog = 'rename';
+      this.loadProjectSymbols();
+      return;
+    }
+    if (action === 'refactor.renameUndo') {
+      this.renameRows = [];
+      this.undoRename();
       return;
     }
     if (action === 'edit.completeCrossFile' || action === 'edit.complete') {
@@ -9358,6 +9496,8 @@ if (this.settings.showBottomToolWindow) {
             this.FindInFilesContent()
           } else if (this.dialog === 'breakpoints') {
       this.BreakpointsContent()
+    } else if (this.dialog === 'rename') {
+      this.RenameContent()
     } else if (this.dialog === 'complete') {
       this.CompleteContent()
     } else if (this.dialog === 'inspect') {
@@ -10435,6 +10575,109 @@ if (this.settings.showBottomToolWindow) {
         }
         .width('100%')
         .constraintSize({ maxHeight: 380 })
+        .scrollBar(BarState.Auto)
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 重命名内容：选符号 → 选命名样式 → 报告 */
+  @Builder
+  RenameContent() {
+    Column() {
+      if (this.renameRows.length > 0) {
+        Text('修改报告（可点「撤销上次重命名」还原）')
+          .fontSize(11.5)
+          .fontColor(this.theme.textDisabled)
+          .padding({ left: 8, top: 2, bottom: 4 })
+        Scroll() {
+          Column() {
+            ForEach(this.renameRows, (row: string, index: number) => {
+              Text(row)
+                .fontSize(12)
+                .fontFamily(PyFont.mono)
+                .fontColor(this.theme.textPrimary)
+                .width('100%')
+                .height(24)
+                .padding({ left: 8, right: 8 })
+            }, (row: string, index: number) => `rn_${index}_${row}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 300 })
+        .scrollBar(BarState.Auto)
+      } else if (this.renameTarget.length > 0) {
+        Text(`已选符号：${this.renameTarget} —— 选择命名样式`)
+          .fontSize(12)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 8, top: 2, bottom: 6 })
+        Row() {
+          Text('加前缀 my_')
+            .fontSize(12)
+            .fontColor(this.theme.textOnAccent)
+            .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+            .margin({ right: 6 })
+            .borderRadius(4)
+            .backgroundColor(this.theme.buttonPrimaryBg)
+            .onClick(() => {
+              this.applyRename('prefix');
+            })
+          Text('加后缀 _v2')
+            .fontSize(12)
+            .fontColor(this.theme.textPrimary)
+            .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+            .margin({ right: 6 })
+            .borderRadius(4)
+            .backgroundColor(this.theme.buttonBg)
+            .onClick(() => {
+              this.applyRename('suffix');
+            })
+          Text('转大写')
+            .fontSize(12)
+            .fontColor(this.theme.textPrimary)
+            .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+            .borderRadius(4)
+            .backgroundColor(this.theme.buttonBg)
+            .onClick(() => {
+              this.applyRename('upper');
+            })
+        }
+        .width('100%')
+        .padding({ left: 8 })
+      } else {
+        Text('点一个符号 → 选择命名样式执行跨文件重命名')
+          .fontSize(11.5)
+          .fontColor(this.theme.textDisabled)
+          .padding({ left: 8, top: 2, bottom: 4 })
+        Scroll() {
+          Column() {
+            ForEach(this.projectSymbols, (row: string, index: number) => {
+              Text(row)
+                .fontSize(12)
+                .fontFamily(PyFont.mono)
+                .fontColor(this.theme.textPrimary)
+                .width('100%')
+                .height(26)
+                .padding({ left: 8, right: 8 })
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .onClick(() => {
+                  const m: RegExpMatchArray | null = row.match(/^(?:类|函数)\s+(\S+)/);
+                  if (m !== null) {
+                    this.renameTarget = m[1];
+                    this.renameRows = [];
+                  }
+                })
+            }, (row: string, index: number) => `rs_${index}_${row}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 420 })
         .scrollBar(BarState.Auto)
       }
     }
