@@ -956,6 +956,8 @@ struct Index {
     }
 
     FileService.attach(this.uiContext);
+    // 书签与断点一样落盘，启动时恢复
+    this.loadBookmarks();
 
     // 运行时识别设备形态：平板(tablet) / 鸿蒙 PC(2in1) / 手机(phone)
     // 依据 deviceInfo.deviceType（module.json5 已声明 deviceTypes: tablet + 2in1）
@@ -4592,6 +4594,14 @@ struct Index {
       this.bookmarks = next;
       this.setStatus(`已添加书签：${tab.name}:${this.cursorLine}`);
     }
+    this.saveBookmarks();
+  }
+
+  /** 从列表里移除某个书签 */
+  private removeBookmark(entry: string): void {
+    this.bookmarks = this.bookmarks.filter((x: string) => x !== entry);
+    this.saveBookmarks();
+    this.setStatus('已移除书签');
   }
 
   /** 书签 / 最近位置条目 → 打开文件并跳到该行 */
@@ -4790,6 +4800,54 @@ struct Index {
     }
     this.openBreakpoints();
     this.setStatus('已清除全部断点');
+  }
+
+  private bookmarkStorePath(): string {
+    return `${FileService.context().filesDir}/bookmarks.json`;
+  }
+
+  /** 启动时读取上次的书签（与断点同样落盘，重启不丢） */
+  private loadBookmarks(): void {
+    const path: string = this.bookmarkStorePath();
+    if (!FileService.exists(path)) {
+      return;
+    }
+    try {
+      const parsed: string[] = JSON.parse(FileService.readText(path)) as string[];
+      if (parsed.length > 0) {
+        this.bookmarks = parsed;
+      }
+    } catch (err) {
+      FileService.log('bookmarks.json 解析失败，已忽略');
+    }
+  }
+
+  private saveBookmarks(): void {
+    try {
+      FileService.writeText(this.bookmarkStorePath(), JSON.stringify(this.bookmarks));
+    } catch (err) {
+      FileService.log('bookmarks.json 写入失败');
+    }
+  }
+
+  /** 当前文件的书签行号（喂给编辑器 gutter） */
+  private activeBookmarkLines(): number[] {
+    const tab: EditorTab | undefined = this.activeTab();
+    if (tab === undefined) {
+      return [];
+    }
+    const prefix: string = `${tab.path}#`;
+    const out: number[] = [];
+    for (let i = 0; i < this.bookmarks.length; i++) {
+      const entry: string = this.bookmarks[i];
+      if (entry.indexOf(prefix) === 0) {
+        const n: number = Number.parseInt(entry.substring(prefix.length), 10);
+        if (!Number.isNaN(n)) {
+          out.push(n);
+        }
+      }
+    }
+    return out;
   }
 
   private breakpointStorePath(): string {
@@ -7524,6 +7582,7 @@ struct Index {
                   highlightCurrentLine: this.settings.highlightCurrentLine,
                   showIndentGuides: this.showIndentGuides,
                   breakpoints: this.pendingBreakpoints,
+    bookmarkLines: this.activeBookmarkLines(),
                   warnLines: this.warnLines,
                   debugLine: this.debugLine,
                   controller: this.editorController,
@@ -7635,6 +7694,7 @@ struct Index {
                       highlightCurrentLine: false,
                       showIndentGuides: this.showIndentGuides,
                       breakpoints: this.pendingBreakpoints,
+    bookmarkLines: this.activeBookmarkLines(),
                   warnLines: this.warnLines,
                       debugLine: 0,
                       // 只读镜像（用户预期：右侧窗格只能看不能改）——共享编辑待有可靠验证手段后再开，见 docs/FEATURE_AUDIT.md 0.34
@@ -10030,7 +10090,48 @@ if (this.settings.showBottomToolWindow) {
   /** TabList → 书签（Bookmarks） */
   @Builder
   BookmarksContent() {
-    this.LocationListContent(this.bookmarks, '暂无书签（编辑器右键 → 切换书签，快捷键 F11）')
+    // 直接在 builder 内读取 @State：@Builder 的参数不具备响应式，传参会拿到旧值（列表不刷新）
+    if (this.bookmarks.length === 0) {
+      Text('暂无书签（点上方「＋ 添加当前行书签」即可添加；重启后仍保留）')
+        .fontSize(12)
+        .fontFamily(PyFont.ui)
+        .fontColor(this.theme.textDisabled)
+        .margin({ top: 6 })
+    } else {
+      Scroll() {
+        Column() {
+          ForEach(this.bookmarks, (entry: string) => {
+            Row() {
+              Text(entry.substring(entry.lastIndexOf('/') + 1).replace('#', ':'))
+                .fontSize(12)
+                .fontFamily(PyFont.ui)
+                .fontColor(this.theme.textPrimary)
+                .layoutWeight(1)
+                .maxLines(1)
+              Text('移除')
+                .fontSize(11)
+                .fontFamily(PyFont.ui)
+                .fontColor(this.theme.textSecondary)
+                .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                .borderRadius(4)
+                .backgroundColor(this.theme.buttonBg)
+                .onClick(() => {
+                  this.removeBookmark(entry);
+                })
+            }
+            .width('100%')
+            .height(28)
+            .padding({ left: 6, right: 6 })
+            .onClick(() => {
+              this.openLocationEntry(entry);
+            })
+          }, (entry: string) => `bm_${entry}`)
+        }
+        .width('100%')
+      }
+      .width('100%')
+      .height(250)
+    }
   }
 
   /** 打开的编辑器列表（MainToolbarCenter 的文件微件弹层，对应 FilenameToolbarWidgetAction 的 popup） */
@@ -10578,7 +10679,30 @@ if (this.settings.showBottomToolWindow) {
   @Builder
   ToolWindowPanelContent(panelId: string) {
     Column() {
-      ForEach(toolWindowPanels().filter((p: ToolWindowPanel) => p.id === panelId), (p: ToolWindowPanel) => {
+      if (panelId === 'Bookmarks') {
+        // 真实书签内容（PyCharm 的 Bookmarks 工具窗）：不再是占位空态
+        Row() {
+          Text('＋ 添加当前行书签')
+            .fontSize(11.5)
+            .fontFamily(PyFont.ui)
+            .fontColor(this.theme.textPrimary)
+            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+            .borderRadius(4)
+            .backgroundColor(this.theme.buttonBg)
+            .onClick(() => {
+              this.toggleBookmark();
+            })
+          Text(`共 ${this.bookmarks.length} 处`)
+            .fontSize(11)
+            .fontFamily(PyFont.ui)
+            .fontColor(this.theme.textSecondary)
+            .margin({ left: 8 })
+        }
+        .width('100%')
+        .margin({ bottom: 8 })
+        this.BookmarksContent()
+      } else {
+        ForEach(toolWindowPanels().filter((p: ToolWindowPanel) => p.id === panelId), (p: ToolWindowPanel) => {
         // 工具条：按 PyCharm 该工具窗的 action group 逐条显示
         Row() {
           ForEach(p.actions, (a: string) => {
@@ -10616,6 +10740,7 @@ if (this.settings.showBottomToolWindow) {
           .fontFamily(PyFont.ui)
           .fontColor(this.theme.textSecondary)
       }, (p: ToolWindowPanel) => p.id)
+      }
     }
     .width('100%')
     .height(300)

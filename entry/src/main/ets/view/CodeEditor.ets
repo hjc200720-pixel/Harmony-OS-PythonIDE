@@ -153,6 +153,8 @@ export struct CodeEditor {
   @Prop @Watch('onBreakpointsChanged') breakpoints: number[] = [];
   /** 检查问题所在行（gutter 上显示警示标）*/
   @Prop warnLines: number[] = [];
+  /** 书签所在行（gutter 上显示蓝色小旗）*/
+  @Prop bookmarkLines: number[] = [];
   /** 调试暂停所在行（1-based，0 表示没有暂停） */
   @Prop @Watch('onDebugLineChanged') debugLine: number = 0;
   /** 剪贴板动作回报（供父组件提示）：'copy' | 'cut' | 'paste' | 'paste-empty' */
@@ -1102,6 +1104,13 @@ export struct CodeEditor {
                       })
                   } else if (this.breakpoints.indexOf(index + 1) >= 0) {
                     Circle({ width: 9, height: 9 }).fill(this.theme.breakpointDot)
+                  } else if (this.bookmarkLines.indexOf(index + 1) >= 0) {
+                    // 书签标记（PyCharm 装订区域的书签小旗，蓝色）
+                    Column()
+                      .width(7)
+                      .height(13)
+                      .backgroundColor('#4A88C7')
+                      .borderRadius(1)
                   } else if (this.warnLines.indexOf(index + 1) >= 0) {
                     // 检查问题标记（PyCharm 的警告小标：琥珀色）
                     Circle({ width: 8, height: 8 }).fill(this.theme.warning)
@@ -1129,6 +1138,7 @@ export struct CodeEditor {
               + `_${this.theme.isDark ? 'd' : 'l'}`
               + `_${this.breakpoints.indexOf(index + 1) >= 0 ? 1 : 0}`
               + `_${this.warnLines.indexOf(index + 1) >= 0 ? 1 : 0}`
+              + `_${this.bookmarkLines.indexOf(index + 1) >= 0 ? 1 : 0}`
               + `_${this.cursorLine === index + 1 ? 1 : 0}`
               + `_${this.debugLine === index + 1 ? 1 : 0}`)
           }
