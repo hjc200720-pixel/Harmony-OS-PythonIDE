@@ -512,7 +512,9 @@ const RENAME_UNDO_SCRIPT: string = [
   '        if os.path.isfile(src):',
   '            shutil.copyfile(src, tgt)',
   '            n = n + 1',
-  'io.open(os.path.join(backup, "_undo.txt"), "w", encoding="utf-8").write("已还原 %d 个文件" % n)',
+  'msg = "已还原 %d 个文件" % n if n > 0 else "(没有可还原的备份)"',
+  'io.open(sys.argv[3], "w", encoding="utf-8").write(msg)',
+  'io.open(os.path.join(backup, "_undo.txt"), "w", encoding="utf-8").write(msg)',
 ].join('\n');
 
 const SE_ACTIONS: string[] = [
@@ -2534,7 +2536,7 @@ struct Index {
     const backup: string = `${FileService.context().filesDir}/.harmonyide/rename_backup`;
     const out: string = `${this.projectRoot}/.harmonyide/rename_undo.txt`;
     FileService.writeText(script, RENAME_UNDO_SCRIPT);
-    const txt: string = await this.runPyAndRead(script, [this.projectRoot, backup], out);
+    const txt: string = await this.runPyAndRead(script, [this.projectRoot, backup, out], out);
     const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : ['(没有可还原的备份)'];
     this.renameRows = rows;
     this.dialogTitle = '已撤销上次重命名';
@@ -10615,9 +10617,6 @@ if (this.settings.showBottomToolWindow) {
             })
         }
         .width('100%')
-          .fontSize(11.5)
-          .fontColor(this.theme.textDisabled)
-          .padding({ left: 8, top: 2, bottom: 4 })
         Scroll() {
           Column() {
             ForEach(this.renameRows, (row: string, index: number) => {
