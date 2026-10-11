@@ -21,12 +21,30 @@ if ([string]::IsNullOrWhiteSpace($Message)) {
 }
 git commit -q -m $Message
 
+# 非交互：绝不弹凭据框（后台任务里弹窗会打断用户）
+$env:GIT_TERMINAL_PROMPT = '0'
+$env:GCM_INTERACTIVE = 'never'
+$env:GCM_PROVIDER = ''
+
+# 1) 先推 GitHub（主仓库，必须成功）
 git push -q origin main 2>&1 | Out-Null
-if ($LASTEXITCODE -eq 0) {
-  Write-Host "pushed: $Message"
+$gh = $LASTEXITCODE
+
+# 2) 再单独推 GitCode（容错：凭据失效/网络问题不影响 GitHub，也不弹窗）
+$gitcode = (git remote get-url --all --push origin | Where-Object { $_ -match 'gitcode' } | Select-Object -First 1)
+if ($gitcode) {
+  git push -q $gitcode main 2>&1 | Out-Null
+  $gc = $LASTEXITCODE
+} else {
+  $gc = -1
+}
+
+if ($gh -eq 0) {
+  Write-Host "pushed GitHub: $Message"
+  if ($gc -ne 0) { Write-Host 'GitCode push failed (token/credential) - GitHub is fine; re-run scripts\setup-gitcode.ps1 with a fresh token' }
   git log --oneline -1
 } else {
-  Write-Host 'push failed (network/credential); commit kept locally'
+  Write-Host 'GitHub push failed (network/credential); commit kept locally'
   exit 2
 }
 

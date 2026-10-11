@@ -251,9 +251,9 @@ const PROJECT_COLORS: ProjectColor[] = [
 
 /** 随处搜索（SearchEverywhere）的"操作"栏：label|actionId */
 const SE_ACTIONS: string[] = [
-  '本地历史|history.show', '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
+  '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
   '循环补全|ed.hippieComplete', '补全语句|ed.completeStatement',
-  '撤销|edit.undo', '重做|edit.redo', '保存|file.save', '全部保存|file.saveAll',
+  '撤销|edit.undo', '重做|edit.redo', '全部保存|file.saveAll',
   '在文件中查找|edit.findInFiles', '随处搜索|edit.searchEverywhere', '转到行|nav.gotoLine',
   '格式化代码|edit.format', '优化导入|edit.optimizeImports', '注释/取消注释|edit.comment',
   '复制当前行|edit.duplicateLine', '运行|run.run', '调试|run.debug', '停止|run.stop',
