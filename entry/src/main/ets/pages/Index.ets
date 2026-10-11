@@ -300,7 +300,7 @@ const DEPS_SCRIPT: string = [
 ].join('\n');
 
 const SE_ACTIONS: string[] = [
-  '变更时间线|vcs.fileHistory', '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
+  '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy', '变更时间线|vcs.fileHistory', '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active',
   '循环补全|ed.hippieComplete', '补全语句|ed.completeStatement',
   '撤销|edit.undo', '重做|edit.redo', '全部保存|file.saveAll',
   '在文件中查找|edit.findInFiles', '随处搜索|edit.searchEverywhere', '转到行|nav.gotoLine',
@@ -1700,6 +1700,12 @@ struct Index {
         }
       }
       FileService.log(`selfcheck hippie prefix=gr candidates=${cand.length} :: ${cand.slice(0, 5).join(',')}`);
+      // 入口可达性自检：SE 首屏（可视约 5 项）实际是哪几项 —— 新增入口挤掉旧入口时立刻暴露
+      const firstLabels: string[] = [];
+      for (let i: number = 0; i < SE_ACTIONS.length && i < 6; i++) {
+        firstLabels.push(SE_ACTIONS[i].split('|')[0]);
+      }
+      FileService.log(`selfcheck seFirst=${firstLabels.join(' / ')}`);
       FileService.log(`selfcheck seActions=${SE_ACTIONS.length} tabs=${this.tabs.length} recentFiles=${this.recentFiles.length}`);
       FileService.log(`selfcheck panes split=${this.paneSplit} pane2=${this.pane2Tabs.length} ratio=${this.paneRatio} before=${this.paneBefore}`);
       const dr: string[] = this.diffLines('a\nb\nc\nd', 'a\nx\nc\nd\ne');
