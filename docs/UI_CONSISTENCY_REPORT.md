@@ -115,3 +115,48 @@
 - **语义错配**：应用的「绘图」实际打开 Graph/图表，而 PyCharm 的 `Plots`（绘图）是**数据绘图**；图标 `twPlots*` 亦为自绘。
 - **`AI 聊天` 与 `Python 控制台` 在竖条里被折成两行**（应用用 `\n` 硬折行）—— 与 PyCharm「单行标签 + 自动折行」的视觉结果等价，但字符串不同。
 - **Gradle / Maven / Diagrams / Services 的侧边归属未核实**：本次扫描的 34 个 toolWindow 定义里没有它们，需要从对应插件的 plugin.xml 再提取。
+## 十、左栏核实结果 —— 与右栏同一类问题（已修）
+
+**你的判断正确**：左栏确实也有「声明了但没接上」的问题，而且和右栏 Python Console 是同一种。
+
+### 依据
+
+| 来源 | 内容 |
+|---|---|
+| PyCharm plugin.xml | `<toolWindow id="Bookmarks" anchor="left"/>`（左侧）|
+| 应用声明表 | `Index.ets:140 new ToolWindowInfo('Bookmarks', '书签', 'left', false)`（也声明在左侧）|
+| 应用左栏实际渲染 | `project / learn / structure / commit / more` —— **没有书签** ✗ |
+
+### 左栏对照 PyCharm（anchor=left 的 8 项）
+
+| PyCharm 左侧工具窗 | 应用 | 说明 |
+|---|---|---|
+| Project | ✓ 左栏 | |
+| Structure | ✓ 左栏（已改名「结构」）| |
+| Commit | ✓ 左栏（无 .git 时隐藏，符合 PyCharm 行为）| |
+| **Bookmarks** | **❌ 已修：加入左栏「书签」** | 点击打开应用内已有的书签占位面板 |
+| Pull Requests / Merge Requests | 声明为 left，未渲染 | 需要 Git 托管集成，合理缺省（PyCharm 无对应仓库时也不显示）|
+| Backup and Sync History / Commit_Guest | 声明为 left，未渲染 | 尚未实现 |
+| Learn | ✓ 左栏「学习」| PyCharm 的 Learn 定义未在本次扫描的 XML 中出现（anchor 未知）|
+
+### 修改内容
+
+1. `sideLabel('bookmarks')` → 「书签」
+2. `sideIcon('bookmarks')` → `icons/twBookmarks20.svg`（该图标已在资源里）
+3. `onSideToolClick('bookmarks')` → `twPanelId = 'Bookmarks'`（打开应用已有的书签占位面板）
+4. 左栏插入 `SideToolButton('bookmarks', 'left')`（位于「结构」之后）
+
+### 真机验证（两次 dump 一致）
+
+```
+左栏: 项目 · 学习 · 结构 · 书签 · ⋯
+右栏: 通知 · AI/聊天 · 数据库 · Gradle · Maven · 绘图 · 软件包 · 控制台
+```
+
+截图：`_cache/device/rails7.jpeg`（说明：该截图那一帧里右栏的「AI 聊天」未绘制，属**截屏时序假象**；
+两次 `dumpLayout` 均确认 `AI/聊天` 节点存在且坐标稳定，故不是代码问题）。
+
+### 复核中发现的工程性问题（重要）
+
+**源文件是 CRLF 行尾**：我此前多次多行文本替换失败（如 `.width(37)\n.height(40)`），根因就是用了 `\n` 拼接模式；
+改用 `\r?\n` 正则后一次通过。**结论：改这个仓库的 .ets 文件，多行匹配必须用 CRLF 兼容写法。**

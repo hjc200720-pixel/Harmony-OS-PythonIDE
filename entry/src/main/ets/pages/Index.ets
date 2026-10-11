@@ -8323,6 +8323,8 @@ if (this.settings.showBottomToolWindow) {
             .width(this.leftStripW)
             .margin({ top: 6, bottom: 6 })
           this.SideToolButton('structure', 'left')
+          // PyCharm: Bookmarks 归属左侧（plugin.xml anchor=left）
+          this.SideToolButton('bookmarks', 'left')
           // PyCharm 的 Commit 工具窗只在工程配置了版本控制时出现
           if (this.hasVcs) {
             this.SideToolButton('commit', 'left')
@@ -8761,6 +8763,11 @@ if (this.settings.showBottomToolWindow) {
       this.openFileStructure();
       return;
     }
+    if (kind === 'bookmarks') {
+      // PyCharm: <toolWindow id="Bookmarks" anchor="left"/> —— 本 IDE 内为占位面板
+      this.twPanelId = 'Bookmarks';
+      return;
+    }
     if (kind === 'more') {
       this.handleAction('tools.settings');
       return;
@@ -8899,6 +8906,9 @@ if (this.settings.showBottomToolWindow) {
     if (kind === 'project') {
       return 'icons/twProject20.svg';
     }
+    if (kind === 'bookmarks') {
+      return 'icons/twBookmarks20.svg';
+    }
     if (kind === 'learn') {
       return 'icons/twLearn20.svg';
     }
@@ -8967,6 +8977,9 @@ if (this.settings.showBottomToolWindow) {
     }
     if (kind === 'structure') {
       return '结构';
+    }
+    if (kind === 'bookmarks') {
+      return '书签';
     }
     if (kind === 'more') {
       return '⋯';
