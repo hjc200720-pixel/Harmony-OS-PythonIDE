@@ -938,3 +938,25 @@ Watches（监视表达式）可用同一通道实现（把表达式存列表 + �
 与此前 hdc 路径未加引号同类：**环境/脚本细节会伪装成功能缺陷**。以后 gutter 点击统一取行号文本中心。
 
 **调试器最终可用动作（全部真机验证）**：继续 / 单步 / 步入 / 步出 / Evaluate 求值 / Watches 监视。
+
+### 0.55 图表子系统（Graph 217）可行性结论 + 第一片实现并验证
+
+**依据核实（PyCharm 文件）**：该子系统来自 intellij.platform.graph.impl.jar，组为：
+    Graph.NeighborhoodViewPopup(61) · Graph.DefaultGraphPopup(39) · NeighborhoodViewPopup.LayoutGroup(25)
+    · NeighborhoodViewPopup.AppearanceGroup(14) · Graph.AppearanceGroup(13) · Graph.DefaultGraphToolbar(12)
+    · Graph.OrthogonalLayoutGroup(6) · Graph.TreeLayoutGroup(6) · Graph.EdgeRealizerGroup(6) …
+即「图表/邻域视图」：节点+边 + 布局（树形/正交）+ 外观 + 工具栏。
+
+**可行性：高** —— 纯应用侧渲染（ArkUI Canvas），数据由自己的解析器产出（类继承 + 函数调用），不需要任何外部引擎。
+
+**第一片已实现并真机验证**（入口：随处搜索首屏「图表：当前文件关系图」）：
+    对话框标题 '图表：当前文件的关系' ✓
+    统计 '2 节点 / 1 边' ✓✓（与 main.py 实际结构一致：greet、main 两函数 + main 调用 greet）
+    工具栏 [树形布局][正交布局][重新布局] ✓，Canvas 真实绘制两个带标签节点框与连边 ✓✓
+    状态栏 '关系图：2 个节点 / 1 条边（类继承 + 函数调用）' ✓
+
+**实现要点**：节点 = 类/函数（类另加其基类节点）；边 = 继承（类>基类）+ 函数调用（函数名+括号命中）；
+布局 = 树形（单列）/ 正交（双列），两布局差异可见。
+
+**待做（Graph 各组）**：NeighborhoodViewPopup 的导出图/打印/放大缩小 · Appearance 组（配色/边样式）·
+EdgeRealizer 组（直线/折线/曲线）· DefaultGraphPopup（在新标签页打开/浮动窗口）· 布局扩展（层次/力导向）。

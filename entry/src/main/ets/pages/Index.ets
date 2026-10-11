@@ -251,7 +251,7 @@ const PROJECT_COLORS: ProjectColor[] = [
 
 /** 随处搜索（SearchEverywhere）的"操作"栏：label|actionId */
 const SE_ACTIONS: string[] = [
-  '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
+  '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active', '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy',
   '循环补全|ed.hippieComplete', '补全语句|ed.completeStatement',
   '撤销|edit.undo', '重做|edit.redo', '全部保存|file.saveAll',
   '在文件中查找|edit.findInFiles', '随处搜索|edit.searchEverywhere', '转到行|nav.gotoLine',
@@ -408,6 +408,12 @@ struct Index {
   /** Evaluate（PyCharm）：输入表达式 + 求值历史 */
   @State evalText: string = '';
   @State debugEvals: string[] = [];
+  /** 图表（Graph/Neighborhood）：节点与边 + Canvas 上下文 */
+  @State graphNodes: string[] = [];
+  @State graphEdges: string[] = [];
+  @State graphLayout: string = 'tree';
+  private graphCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true));
+
   /** Watches（监视表达式）：表达式 + 最近一次求值结果 */
   @State watches: string[] = [];
   @State watchValues: string[] = [];
@@ -1785,6 +1791,126 @@ struct Index {
     this.historyPaths = paths;
     this.dialogTitle = `本地历史：${path.substring(path.lastIndexOf('/') + 1)}（${rows.length} 个快照）`;
     this.dialog = 'localHistory';
+  }
+
+  /** 构建当前文件的关系图：节点（类/函数/基类）+ 边（继承/调用）*/
+  private buildGraph(): void {
+    const text: string = this.editorSeedText;
+    const lines: string[] = text.split('\n');
+    const funcs: string[] = [];
+    const classes: string[] = [];
+    const nodes: string[] = [];
+    const edges: string[] = [];
+    // 记录每个 def/class 所处的缩进与名字，便于按"调用名"找边
+    for (const raw of lines) {
+      const t: string = raw.trim();
+      const mc: RegExpMatchArray | null = t.match(/^class\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(([^)]*)\))?\s*:/);
+      if (mc !== null) {
+        classes.push(mc[1]);
+        if (nodes.indexOf(mc[1]) < 0) {
+          nodes.push(mc[1]);
+        }
+        const bases: string = mc[2] === undefined ? '' : mc[2];
+        for (const b of bases.split(',')) {
+          const base: string = b.trim();
+          if (base.length > 0) {
+            if (nodes.indexOf(base) < 0) {
+              nodes.push(base);
+            }
+            edges.push(`${mc[1]}>${base}`);
+          }
+        }
+        continue;
+      }
+      const mf: RegExpMatchArray | null = t.match(/^def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/);
+      if (mf !== null) {
+        funcs.push(mf[1]);
+        if (nodes.indexOf(mf[1]) < 0) {
+          nodes.push(mf[1]);
+        }
+      }
+    }
+    // 函数调用边：函数体内出现其它已知函数名 + '('
+    let current: string = '';
+    for (const raw of lines) {
+      const t: string = raw.trim();
+      const mf: RegExpMatchArray | null = t.match(/^def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/);
+      if (mf !== null) {
+        current = mf[1];
+        continue;
+      }
+      if (current.length === 0) {
+        continue;
+      }
+      for (const fn of funcs) {
+        if (fn !== current && new RegExp(`\\b${fn}\\s*\\(`).test(t)) {
+          const e: string = `${current}>${fn}`;
+          if (edges.indexOf(e) < 0) {
+            edges.push(e);
+          }
+        }
+      }
+    }
+    this.graphNodes = nodes;
+    this.graphEdges = edges;
+    this.setStatus(`关系图：${nodes.length} 个节点 / ${edges.length} 条边（类继承 + 函数调用）`);
+  }
+
+  /** 在 Canvas 上画关系图（简单分层布局）*/
+  private drawGraph(): void {
+    const ctx: CanvasRenderingContext2D = this.graphCtx;
+    ctx.clearRect(0, 0, 1000, 400);
+    const nodes: string[] = this.graphNodes;
+    const n: number = nodes.length;
+    if (n === 0) {
+      ctx.fillStyle = '#8A8A8A';
+      ctx.font = '14px sans-serif';
+      ctx.fillText('当前文件没有可绘制的类或函数', 16, 30);
+      return;
+    }
+    // 布局：一列一行（tree 竖排）或两列（orthogonal 横排）
+    const twoCol: boolean = this.graphLayout === 'orthogonal';
+    const boxW: number = 150;
+    const boxH: number = 34;
+    const gapX: number = 240;
+    const gapY: number = 56;
+    const pos: Map<string, number[]> = new Map<string, number[]>();
+    for (let i: number = 0; i < n; i++) {
+      const col: number = twoCol ? (i % 2) : 0;
+      const row: number = twoCol ? Math.floor(i / 2) : i;
+      pos.set(nodes[i], [20 + col * gapX, 16 + row * gapY]);
+    }
+    // 先画边
+    ctx.strokeStyle = '#5A7FA8';
+    ctx.lineWidth = 1.4;
+    for (const e of this.graphEdges) {
+      const parts: string[] = e.split('>');
+      const a: number[] | undefined = pos.get(parts[0]);
+      const b: number[] | undefined = pos.get(parts[1]);
+      if (a === undefined || b === undefined) {
+        continue;
+      }
+      ctx.beginPath();
+      ctx.moveTo(a[0] + boxW / 2, a[1] + boxH);
+      ctx.lineTo(b[0] + boxW / 2, b[1]);
+      ctx.stroke();
+    }
+    // 再画节点
+    for (let i: number = 0; i < n; i++) {
+      const p: number[] | undefined = pos.get(nodes[i]);
+      if (p === undefined) {
+        continue;
+      }
+      ctx.fillStyle = '#3B4A5A';
+      ctx.strokeStyle = '#6C8CB4';
+      ctx.beginPath();
+      ctx.rect(p[0], p[1], boxW, boxH);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#E6E6E6';
+      ctx.font = '13px monospace';
+      ctx.fillText(nodes[i], p[0] + 10, p[1] + 22);
+    }
   }
 
   /** 行级差异（LCS 动态规划，用一维数组避免嵌套数组）*/
@@ -4363,6 +4489,12 @@ struct Index {
       // MoreRunToolbarActions：运行相关的更多操作（PyCharm 里是 运行/调试/编辑配置… 的弹层）
       this.dialogTitle = '运行';
       this.dialog = 'runConfig';
+      return;
+    }
+    if (action === 'graph.neighborhood' || action === 'graph.show' || action === 'diagram.show') {
+      this.buildGraph();
+      this.dialogTitle = '图表：当前文件的关系';
+      this.dialog = 'graph';
       return;
     }
     if (action === 'diff.clipboard' || action === 'diff.compareWithClipboard') {
@@ -8313,6 +8445,8 @@ if (this.settings.showBottomToolWindow) {
             this.FindInFilesContent()
           } else if (this.dialog === 'breakpoints') {
       this.BreakpointsContent()
+    } else if (this.dialog === 'graph') {
+      this.GraphContent()
     } else if (this.dialog === 'localHistory') {
       this.LocalHistoryContent()
     } else if (this.dialog === 'diffView') {
@@ -9376,6 +9510,62 @@ if (this.settings.showBottomToolWindow) {
         .constraintSize({ maxHeight: 380 })
         .scrollBar(BarState.Auto)
       }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 图表内容（Graph/Neighborhood）：工具栏 + Canvas 关系图 */
+  @Builder
+  GraphContent() {
+    Column() {
+      Row() {
+        Text(`${this.graphNodes.length} 节点 / ${this.graphEdges.length} 边`)
+          .fontSize(11.5)
+          .fontColor(this.theme.textDisabled)
+          .layoutWeight(1)
+        Text('树形布局')
+          .fontSize(12)
+          .fontColor(this.graphLayout === 'tree' ? this.theme.textOnAccent : this.theme.textPrimary)
+          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+          .margin({ right: 6 })
+          .borderRadius(4)
+          .backgroundColor(this.graphLayout === 'tree' ? this.theme.buttonPrimaryBg : this.theme.buttonBg)
+          .onClick(() => {
+            this.graphLayout = 'tree';
+            this.drawGraph();
+          })
+        Text('正交布局')
+          .fontSize(12)
+          .fontColor(this.graphLayout === 'orthogonal' ? this.theme.textOnAccent : this.theme.textPrimary)
+          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+          .margin({ right: 6 })
+          .borderRadius(4)
+          .backgroundColor(this.graphLayout === 'orthogonal' ? this.theme.buttonPrimaryBg : this.theme.buttonBg)
+          .onClick(() => {
+            this.graphLayout = 'orthogonal';
+            this.drawGraph();
+          })
+        Text('重新布局')
+          .fontSize(12)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.buttonBg)
+          .onClick(() => {
+            this.buildGraph();
+            this.drawGraph();
+          })
+      }
+      .width('100%')
+      .padding({ left: 8, right: 8, top: 2, bottom: 6 })
+      Canvas(this.graphCtx)
+        .width('100%')
+        .height(360)
+        .backgroundColor(this.theme.editorBg)
+        .onReady(() => {
+          this.drawGraph();
+        })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
