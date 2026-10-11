@@ -135,7 +135,7 @@ function toolWindows(): ToolWindowInfo[] {
   return [
     // 左侧
     new ToolWindowInfo('Project', '项目', 'left', true),
-    new ToolWindowInfo('Structure', 'Structure', 'left', true),
+    new ToolWindowInfo('Structure', '结构', 'left', true),
     new ToolWindowInfo('Commit', '提交', 'left', true),
     new ToolWindowInfo('Bookmarks', '书签', 'left', false),
     new ToolWindowInfo('Merge Requests', '合并请求', 'left', false),
@@ -8769,7 +8769,9 @@ if (this.settings.showBottomToolWindow) {
       return;
     }
     if (kind === 'more') {
-      this.handleAction('tools.settings');
+      // PyCharm: toolwindow.action.more=「更多…」→ 列出未直接显示的工具窗（SecondaryToolWindowPopup）
+      this.dialogTitle = '更多工具窗…';
+      this.dialog = 'toolWindows';
       return;
     }
     if (kind === 'processOutput') {
@@ -8916,7 +8918,8 @@ if (this.settings.showBottomToolWindow) {
       return 'icons/twStructure20.svg';
     }
     if (kind === 'more') {
-      return 'icons/moreVertical.svg';
+      // 原 moreVertical.svg 是 16px、圆点直径 2px，按 20px 渲染后几乎不可见 → 用 20px 版
+      return 'icons/moreVertical20.svg';
     }
     if (kind === 'processOutput') {
       return 'icons/console.svg';
@@ -8982,7 +8985,7 @@ if (this.settings.showBottomToolWindow) {
       return '书签';
     }
     if (kind === 'more') {
-      return '⋯';
+      return '';
     }
     if (kind === 'processOutput') {
       return '进程输出';
@@ -9048,7 +9051,8 @@ if (this.settings.showBottomToolWindow) {
         iconSize: 20,
         file: this.sideIcon(kind)
       })
-      Text(this.sideLabel(kind))
+      if (this.sideLabel(kind).length > 0) {
+        Text(this.sideLabel(kind))
         // 小字号 = UI(12) − 1 = 11（主题 fontSizeOffset=-1）
         .fontSize(11)
         .fontFamily(PyFont.ui)
@@ -9058,7 +9062,8 @@ if (this.settings.showBottomToolWindow) {
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Clip })
         // 主题实测：leftStripeTextOffset = 2、rightStripeTextOffset = -2（右侧贴更近）
-        .margin({ top: side === 'left' ? 2 : 0 })
+          .margin({ top: side === 'left' ? 2 : 0 })
+      }
     }
     // 主题 StripeToolbar.Button.size = 37,40 → 项 37 宽 × 40 高
     // 内边距 left = 4,6,4,2；right = 4,2,4,6（主题 StripeToolbar.Button.*StripeIconWithName.padding）
@@ -9150,6 +9155,8 @@ if (this.settings.showBottomToolWindow) {
 
   /** 通用信息面板（没有专用界面的工具窗用它显示真实内容） */
   private showInfo(title: string, lines: string[]): void {
+    // 清掉上一轮可能残留的外框标题（否则会出现标题串味：如 Gradle 说明框顶着「更多工具窗…」）
+    this.dialogTitle = '';
     this.infoTitle = title;
     this.infoLines = lines;
     this.dialog = 'info';
