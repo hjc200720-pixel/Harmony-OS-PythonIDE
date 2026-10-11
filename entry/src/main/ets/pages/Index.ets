@@ -6375,6 +6375,13 @@ struct Index {
                   entries: this.logEntries,
                   activeTab: this.consoleTab,
                   debugLines: this.debugPanelLines(),
+                  debugStack: this.debugStack,
+                  gotoFrame: (file: string, line: number) => {
+                    // PyCharm：点调用栈帧跳到对应源码位置
+                    this.openFile(file, FileService.baseName(file));
+                    this.editorController.revealLine(line);
+                    this.setStatus(`已跳转到 ${FileService.baseName(file)}:${line}`);
+                  },
                   resumeDebug: () => this.resumeDebug(),
                   stepDebug: () => this.stepDebug(),
                   stepIntoDebug: () => this.stepIntoDebug(),
@@ -6592,6 +6599,13 @@ if (this.settings.showBottomToolWindow) {
                   entries: this.logEntries,
                   activeTab: this.consoleTab,
                   debugLines: this.debugPanelLines(),
+                  debugStack: this.debugStack,
+                  gotoFrame: (file: string, line: number) => {
+                    // PyCharm：点调用栈帧跳到对应源码位置
+                    this.openFile(file, FileService.baseName(file));
+                    this.editorController.revealLine(line);
+                    this.setStatus(`已跳转到 ${FileService.baseName(file)}:${line}`);
+                  },
                   resumeDebug: () => this.resumeDebug(),
                   stepDebug: () => this.stepDebug(),
                   stepIntoDebug: () => this.stepIntoDebug(),

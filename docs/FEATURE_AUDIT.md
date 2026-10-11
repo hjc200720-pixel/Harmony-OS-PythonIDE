@@ -873,3 +873,17 @@ Resume / Step Over / Step Into / Step Out 均真实驱动原生调试钩子并�
 
 **至此调试器子系统（本可做部分）完整收口**：断点（设置/列表/清除）· 调试会话 · 真挂起 ·
 暂停位置同步 · 变量 · 调用栈 · 四命令。剩余 Watches/Evaluate/条件断点需扩展原生钩子命令通道。
+
+### 0.51 调用栈帧可点击跳转（XDebugger Frames 行为）
+
+**实现（纯应用侧，无需改原生）**：
+- ConsolePanelView 新增 `@Prop debugStack: string[][]` 与回调 `gotoFrame(file, line)`，把每帧渲染为**独立可点行**
+- Index 传入 `debugStack: this.debugStack` 与 gotoFrame 实现：openFile + revealLine + 状态栏提示
+
+**真机验证**：
+    调试页签调用栈两行: 'main   main.py:11' 与 '<module>   main.py:18' ✓✓
+    点击最外层帧 → 状态栏 '已跳转到 main.py:18' ✓✓，编辑器光标移到 18:1 ✓✓
+    （同时确认：已暂停 main.py:11 (main) · 变量（0）· 调用栈（2）· 四命令按钮均在）
+
+**调试器功能至此收口**：断点体系 · 会话 · 真挂起 · 位置同步 · 变量 · 调用栈（含点击跳转）· 四命令。
+仍缺（需扩展原生命令通道）：Watches / Evaluate / 条件断点 / 多线程。

@@ -122,6 +122,9 @@ export struct ConsolePanelView {
   @Prop activeTab: string = TAB_RUN;
   /** 调试页内容（XDebugger 变量/调用栈）：由 Index 侧的调试事件生成 */
   @Prop debugLines: string[] = [];
+  /** 调用栈帧 [file, line, func]，可点击跳转到源码位置（PyCharm Frames 行为）*/
+  @Prop debugStack: string[][] = [];
+  gotoFrame: (file: string, line: number) => void = () => {};
   @Prop running: boolean = false;
   @Prop replPrompt: string = '>>> ';
   @Prop interpreterLabel: string = '';
@@ -578,6 +581,30 @@ export struct ConsolePanelView {
         }
         .width('100%')
         .padding({ left: 8, top: 4, bottom: 4 })
+        if (this.debugStack.length > 0) {
+          Column() {
+            ForEach(this.debugStack, (frame: string[], index: number) => {
+              Row() {
+                Text(`${frame.length >= 3 ? frame[2] : '?'}   ${frame.length >= 1 ? frame[0].substring(frame[0].lastIndexOf('/') + 1) : ''}:${frame.length >= 2 ? frame[1] : ''}`)
+                  .fontSize(12)
+                  .fontFamily(PyFont.mono)
+                  .fontColor(this.theme.textPrimary)
+                  .layoutWeight(1)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
+              .width('100%')
+              .padding({ left: 16, right: 8, top: 2, bottom: 2 })
+              .onClick(() => {
+                if (frame.length >= 2) {
+                  this.gotoFrame(frame[0], Number.parseInt(frame[1], 10));
+                }
+              })
+            }, (frame: string[], index: number) => `fr_${index}_${frame.join('|')}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
         if (this.debugLines.length === 0) {
           Text('未在调试中（在行号左侧点一下加断点，再点工具栏的调试按钮）')
             .fontSize(12)
