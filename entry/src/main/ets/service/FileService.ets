@@ -421,6 +421,38 @@ export class FileService {
         ''
       ].join('\n'));
     }
+    const modelsPy: string = `${root}/demo_pkg/models.py`;
+    if (!FileService.exists(modelsPy)) {
+      FileService.writeText(modelsPy, [
+        '"""示例类层次：便于演示继承层级 / 查找用法 / 结构视图。"""',
+        '',
+        '',
+        'class Animal:',
+        '    """所有动物的基类。"""',
+        '',
+        '    def __init__(self, name: str) -> None:',
+        '        self.name = name',
+        '',
+        '    def speak(self) -> str:',
+        '        return "..."',
+        '',
+        '',
+        'class Dog(Animal):',
+        '    """狗：重写 speak，并新增 fetch。"""',
+        '',
+        '    def speak(self) -> str:',
+        '        return f"{self.name}: 汪汪"',
+        '',
+        '    def fetch(self) -> str:',
+        '        return f"{self.name} 把球叼回来了"',
+        '',
+        '',
+        'class Cat(Animal):',
+        '    def speak(self) -> str:',
+        '        return f"{self.name}: 喵"',
+        ''
+      ].join('\n'));
+    }
     const utilsPy: string = `${root}/utils.py`;
     if (!FileService.exists(utilsPy)) {
       FileService.writeText(utilsPy, [

@@ -284,7 +284,24 @@ const SCOPE_AST_SCRIPT: string = [
   '    nref = counts.get(name, 0)',
   '    rows.append((\'  \' * depth) + kind + \' \' + name + \'   L\' + str(line) + (\'   \' + extra if extra else \'\') + \' · 被引用 %d\' % nref)',
   'target = sys.argv[3] if len(sys.argv) > 3 else \'\'',
-  'if target:',
+  'if target == \'__hierarchy__\':',
+  '    src_lines = text.splitlines()',
+  '    cls_rows = []',
+  '    classes = [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]',
+  '    for node in classes:',
+  '        bases = [b.id for b in node.bases if isinstance(b, ast.Name)]',
+  '        cls_rows.append(\'类 %s   L%d   基类 %s\' % (node.name, node.lineno, \', \'.join(bases) if bases else \'(无)\'))',
+  '        for sub in node.body:',
+  '            if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):',
+  '                cls_rows.append(\'    方法 %s   L%d\' % (sub.name, sub.lineno))',
+  '        for b in bases:',
+  '            for other in classes:',
+  '                if other.name == b:',
+  '                    for sub in other.body:',
+  '                        if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):',
+  '                            cls_rows.append(\'    ← 继承 %s.%s   L%d\' % (b, sub.name, sub.lineno))',
+  '    io.open(out, \'w\', encoding=\'utf-8\').write(chr(10).join(cls_rows) if cls_rows else \'(当前文件没有类定义)\')',
+  'elif target:',
   '    src_lines = text.splitlines()',
   '    found = []',
   '    for node in ast.walk(tree):',
@@ -476,6 +493,9 @@ struct Index {
   /** Evaluate（PyCharm）：输入表达式 + 求值历史 */
   @State evalText: string = '';
   @State debugEvals: string[] = [];
+  /** 继承层级（ast 版）：类/基类/方法/继承来的方法 */
+  @State astHierRows: string[] = [];
+
   /** 查找用法：当前选中的符号 + 用法行 */
   @State usagesSymbol: string = '';
   @State usagesRows: string[] = [];
@@ -811,6 +831,11 @@ struct Index {
     FileService.ensureDir(root);
     const last: string = this.settings.lastProjectRoot;
     if (last.length > 0 && FileService.isDir(last)) {
+      // 示例工程自愈：版本升级后新增的示例文件要补齐（createSampleProject 内是逐文件存在性判断，幂等）
+      // 只对示例工程做，避免往用户自己的工程里注入示例文件
+      if (last.indexOf('示例工程') >= 0) {
+        FileService.createSampleProject(last);
+      }
       this.loadProject(last);
       return;
     }
@@ -2240,6 +2265,25 @@ struct Index {
     this.dialogTitle = '外部系统：任务与依赖';
     this.dialog = 'externals';
   }
+  private async loadAstHierarchy(): Promise<void> {
+    const file: string = this.editorFilePath;
+    if (file.length === 0) {
+      return;
+    }
+    const dir: string = `${FileService.context().filesDir}/.harmonyide`;
+    FileService.ensureDir(dir);
+    FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
+    const script: string = `${dir}/ast_scope.py`;
+    const out: string = `${this.projectRoot}/.harmonyide/hierarchy.txt`;
+    FileService.writeText(script, SCOPE_AST_SCRIPT);
+    this.setStatus('正在用 ast 分析继承层级…');
+    const txt: string = await this.runPyAndRead(script, [file, out, '__hierarchy__'], out);
+    const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : [];
+    this.astHierRows = rows;
+    this.setStatus(rows.length > 0 && rows[0].indexOf('类 ') === 0
+      ? `继承层级：${rows.length} 行（ast）`
+      : '当前文件没有类定义');
+  }
 
   /** 查找用法（PyCharm 的 Find Usages）：用 ast 列出该符号的每一处引用 */
   private async findUsages(symbol: string): Promise<void> {
@@ -2479,6 +2523,18 @@ struct Index {
 
   /** 继承关系（PyCharm 的 Hierarchy）：解析当前文件的 class A(B) → "子类 : 父类" */
   private classHierarchy(): string[] {
+    // ast 结果可用时优先（正则版丢嵌套、看不出继承来的方法）
+    if (this.astHierRows.length > 0) {
+      return this.astHierRows;
+    }
+    // ast 结果可用时优先（正则版丢嵌套、看不出继承来的方法）
+    if (this.astHierRows.length > 0) {
+      return this.astHierRows;
+    }
+    // ast 结果可用时优先（正则版丢嵌套、看不出继承来的方法）
+    if (this.astHierRows.length > 0) {
+      return this.astHierRows;
+    }
     return this.parseHierarchy(this.editorSeedText);
   }
 
@@ -2820,6 +2876,7 @@ struct Index {
     if (id === 'st.hierarchy') {
       this.dialogTitle = '继承层级';
       this.dialog = 'hierarchy';
+      this.loadAstHierarchy();
       return;
     }
     if (id === 'st.findUsages') {
@@ -5058,6 +5115,7 @@ struct Index {
     if (action === 'nav.hierarchy' || action === 'view.hierarchy') {
       this.dialogTitle = '继承层级';
       this.dialog = 'hierarchy';
+      this.loadAstHierarchy();
       return;
     }
     if (action === 'nav.switcher' || action === 'view.switcher') {
