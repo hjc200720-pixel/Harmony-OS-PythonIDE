@@ -93,6 +93,15 @@ Flex({ direction: this.paneSplit === 'v' ? FlexDirection.Column : FlexDirection.
 git remote set-url --add --push 加第二个推送地址 → 推送 → 校验）。
 之后 git push 一次更新两个平台；配 scripts/autopush.ps1 + 计划任务即两边全自动。
 实测：建库 HTTP 200、GitCode hooks [PASSED]、* [new branch] main -> main、两边 HEAD 一致。
+
+**踩坑（重要）**：`git remote set-url --add --push origin <gitcode>` 会把推送地址列表**整体替换**为只有 GitCode，
+导致 GitHub 不再收到推送（首次配置后就中了：GitCode 到 c849dfc，GitHub 仍停在 1219c7d）。
+正确做法是把两个地址都显式放进列表：
+
+    git remote set-url      --push origin https://github.com/hjc200720-pixel/Harmony-OS-PythonIDE.git
+    git remote set-url --add --push origin https://gitcode.com/hjc200720/Harmony-OS-PythonIDE.git
+
+校验：`git remote get-url --all --push origin` 必须**输出两行**。
 ### 0.34 共享文档（两窗格同编，PyCharm 行为）—— 实现完成，验证未完成
 
 **实现**：第 2 窗格去掉 `readOnly: true`，改挂与第 1 窗格**相同的** `onTextChange` / `onCursorChange`
