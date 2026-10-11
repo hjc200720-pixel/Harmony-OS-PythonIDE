@@ -344,6 +344,7 @@ const PROJECT_AST_SCRIPT: string = [
   'rows = []',
   'files = []',
   'for dirpath, dirnames, filenames in os.walk(root):',
+  '    dirnames[:] = [d for d in dirnames if d != ".harmonyide" and not d.startswith(".")]',
   '    for fn in filenames:',
   '        if fn.endswith(".py"):',
   '            files.append(os.path.join(dirpath, fn))',
@@ -442,9 +443,11 @@ const RENAME_AST_SCRIPT: string = [
   'old = sys.argv[2]',
   'new = sys.argv[3]',
   'backup = sys.argv[4]',
+  'out = sys.argv[5]',
   'rows = []',
   'changed = 0',
   'for dirpath, dirnames, filenames in os.walk(root):',
+  '    dirnames[:] = [d for d in dirnames if d != ".harmonyide" and not d.startswith(".")]',
   '    for fn in sorted(filenames):',
   '        if not fn.endswith(".py"):',
   '            continue',
@@ -488,7 +491,9 @@ const RENAME_AST_SCRIPT: string = [
   '        io.open(path, "w", encoding="utf-8").write(chr(10).join(lines))',
   '        rows.append("%s  %d 处" % (rel, len(edits)))',
   '        changed = changed + len(edits)',
-  'io.open(os.path.join(backup, "_report.txt"), "w", encoding="utf-8").write(chr(10).join(rows) + (chr(10) + "共 %d 处" % changed))',
+  'text_out = (chr(10).join(rows) + (chr(10) + "共 %d 处" % changed)) if rows else "(没有找到需要修改的位置)"',
+  'io.open(out, "w", encoding="utf-8").write(text_out)',
+  'io.open(os.path.join(backup, "_report.txt"), "w", encoding="utf-8").write(text_out)',
   'print(chr(10).join(rows))',
 ].join('\n');
 
@@ -2500,16 +2505,20 @@ struct Index {
       next = `${old}_v2`;
     } else if (style === 'upper') {
       next = old.toUpperCase();
+    } else if (style === 'strip') {
+      next = old.startsWith('my_') ? old.substring(3) : old.replace(/_v2$/, '');
     }
     const dir: string = `${FileService.context().filesDir}/.harmonyide`;
     FileService.ensureDir(dir);
     FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
     const script: string = `${dir}/ast_rename.py`;
-    const backup: string = `${this.projectRoot}/.harmonyide/rename_backup`;
+    // 备份目录放在应用私有目录（工程之外），并让脚本排除 .harmonyide，避免自我改名与污染索引
+    const backup: string = `${FileService.context().filesDir}/.harmonyide/rename_backup`;
+    FileService.ensureDir(backup);
     const out: string = `${this.projectRoot}/.harmonyide/rename_report.txt`;
     FileService.writeText(script, RENAME_AST_SCRIPT);
     this.setStatus(`正在重命名 ${old} → ${next}…`);
-    const txt: string = await this.runPyAndRead(script, [this.projectRoot, old, next, backup], out);
+    const txt: string = await this.runPyAndRead(script, [this.projectRoot, old, next, backup, out], out);
     const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : ['(没有找到需要修改的位置)'];
     this.renameRows = rows;
     this.dialogTitle = `重命名：${old} → ${next}`;
@@ -2522,7 +2531,7 @@ struct Index {
     const dir: string = `${FileService.context().filesDir}/.harmonyide`;
     FileService.ensureDir(dir);
     const script: string = `${dir}/ast_rename_undo.py`;
-    const backup: string = `${this.projectRoot}/.harmonyide/rename_backup`;
+    const backup: string = `${FileService.context().filesDir}/.harmonyide/rename_backup`;
     const out: string = `${this.projectRoot}/.harmonyide/rename_undo.txt`;
     FileService.writeText(script, RENAME_UNDO_SCRIPT);
     const txt: string = await this.runPyAndRead(script, [this.projectRoot, backup], out);
@@ -10587,7 +10596,25 @@ if (this.settings.showBottomToolWindow) {
   RenameContent() {
     Column() {
       if (this.renameRows.length > 0) {
-        Text('修改报告（可点「撤销上次重命名」还原）')
+        Row() {
+          Text('修改报告')
+            .fontSize(11.5)
+            .fontColor(this.theme.textDisabled)
+            .layoutWeight(1)
+            .padding({ left: 8, top: 2, bottom: 4 })
+          Text('撤销这次重命名')
+            .fontSize(11.5)
+            .fontColor(this.theme.textOnAccent)
+            .margin({ right: 8, top: 2, bottom: 4 })
+            .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+            .borderRadius(4)
+            .backgroundColor(this.theme.buttonPrimaryBg)
+            .onClick(() => {
+              this.renameRows = [];
+              this.undoRename();
+            })
+        }
+        .width('100%')
           .fontSize(11.5)
           .fontColor(this.theme.textDisabled)
           .padding({ left: 8, top: 2, bottom: 4 })
@@ -10634,6 +10661,16 @@ if (this.settings.showBottomToolWindow) {
             .backgroundColor(this.theme.buttonBg)
             .onClick(() => {
               this.applyRename('suffix');
+            })
+              Text('去掉 my_ 前缀')
+            .fontSize(12)
+            .fontColor(this.theme.textPrimary)
+            .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+            .margin({ right: 6 })
+            .borderRadius(4)
+            .backgroundColor(this.theme.buttonBg)
+            .onClick(() => {
+              this.applyRename('strip');
             })
           Text('转大写')
             .fontSize(12)
