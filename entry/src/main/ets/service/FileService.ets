@@ -460,6 +460,20 @@ export class FileService {
         ''
       ].join('\n'));
     }
+    const scratchPy: string = `${root}/demo_pkg/scratch.py`;
+    if (!FileService.exists(scratchPy)) {
+      FileService.writeText(scratchPy, [
+        '"""留作演示「未使用变量」检查的草稿模块。"""',
+        '',
+        '',
+        'def compute(n: int) -> int:',
+        '    """cache 与 unused_local 赋值后从未读取，会被检出。"""',
+        '    cache = n * 2',
+        '    unused_local = 42',
+        '    return n + 1',
+        ''
+      ].join('\n'));
+    }
     const todoPy: string = `${root}/demo_pkg/todo.py`;
     if (!FileService.exists(todoPy)) {
       FileService.writeText(todoPy, [
