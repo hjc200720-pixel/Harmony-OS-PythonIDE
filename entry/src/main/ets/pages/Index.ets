@@ -1,5 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { deviceInfo } from '@kit.BasicServicesKit';
+import { util } from '@kit.ArkTS';
 import { window } from '@kit.ArkUI';
 import { font } from '@kit.ArkUI';
 import { KeyCode } from '@kit.InputKit';
@@ -418,6 +419,9 @@ struct Index {
   @State graphDir: string = 'v';
   /** 缩放（DefaultGraphToolbar：放大/缩小/适应）*/
   @State graphZoom: number = 1.0;
+  /** 外观（Graph.AppearanceGroup）：显示标签 / 配色方案 */
+  @State graphShowLabels: boolean = true;
+  @State graphPalette: number = 0;
   private graphCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true));
 
   /** Watches（监视表达式）：表达式 + 最近一次求值结果 */
@@ -1897,7 +1901,14 @@ struct Index {
       pos.set(nodes[i], [20 + col * gapX, 16 + row * gapY]);
     }
     // 先画边
-    ctx.strokeStyle = '#5A7FA8';
+    // 外观配色（Graph.AppearanceGroup，3 套）：[节点填充, 节点描边, 边色, 文字]
+    const palettes: string[][] = [
+      ['#3B4A5A', '#6C8CB4', '#5A7FA8', '#E6E6E6'],
+      ['#4A3B3B', '#B48C6C', '#A8815A', '#F0E6E0'],
+      ['#3B4A3B', '#8CB46C', '#7FA85A', '#E6F0E0']
+    ];
+    const pal: string[] = palettes[this.graphPalette % 3];
+    ctx.strokeStyle = pal[2];
     ctx.lineWidth = 1.4 * z;
     for (const e of this.graphEdges) {
       const parts: string[] = e.split('>');
@@ -1938,15 +1949,35 @@ struct Index {
       if (p === undefined) {
         continue;
       }
-      ctx.fillStyle = '#3B4A5A';
-      ctx.strokeStyle = '#6C8CB4';
+      ctx.fillStyle = pal[0];
+      ctx.strokeStyle = pal[1];
       ctx.beginPath();
+      // 统一尺寸：两轴都用同一个 boxW/boxH，保证任何缩放下所有节点框等宽等高
       ctx.rect(p[0], p[1], boxW, boxH);
       ctx.fill();
       ctx.stroke();
-      ctx.fillStyle = '#E6E6E6';
-      ctx.font = `${Math.round(13 * z)}px monospace`;
-      ctx.fillText(nodes[i], p[0] + 10 * z, p[1] + 22 * z);
+      if (this.graphShowLabels) {
+        ctx.fillStyle = pal[3];
+        ctx.font = `${Math.round(13 * z)}px monospace`;
+        ctx.fillText(nodes[i], p[0] + 10 * z, p[1] + 22 * z);
+      }
+    }
+  }
+
+  /** 导出图表为 PNG（Graph.DefaultGraphToolbar 的导出）：写入工程根目录，可在工程树看到 */
+  private exportGraph(): void {
+    try {
+      const dataUrl: string = this.graphCtx.toDataURL('image/png');
+      const base64: string = dataUrl.substring(dataUrl.indexOf(',') + 1);
+      const bytes: Uint8Array = new util.Base64Helper().decodeSync(base64);
+      const out: string = `${this.projectRoot}/关系图.png`;
+      FileService.writeBinary(out, bytes);
+      // 刷新工程树，让导出的文件立刻可见
+      this.treeRoots = FileService.listDir(this.projectRoot, 0);
+      this.treeRoots = this.treeRoots.slice();
+      this.setStatus(`已导出图表：${out.split('/').pop()}（${bytes.length} 字节）`);
+    } catch (e) {
+      this.showToast('导出失败：画布尚未就绪');
     }
   }
 
@@ -9556,11 +9587,12 @@ if (this.settings.showBottomToolWindow) {
   @Builder
   GraphContent() {
     Column() {
-      Row() {
+      // 工具栏：控件较多（10 个），用可换行 Flex，避免超出对话框宽度导致点不到
+      Flex({ wrap: FlexWrap.Wrap, alignItems: ItemAlign.Center }) {
         Text(`${this.graphNodes.length} 节点 / ${this.graphEdges.length} 边`)
           .fontSize(11.5)
           .fontColor(this.theme.textDisabled)
-          .layoutWeight(1)
+          .margin({ right: 10 })
         Text('树形布局')
           .fontSize(12)
           .fontColor(this.graphLayout === 'tree' ? this.theme.textOnAccent : this.theme.textPrimary)
@@ -9626,6 +9658,38 @@ if (this.settings.showBottomToolWindow) {
           .onClick(() => {
             this.graphZoom = Math.min(1.8, this.graphZoom + 0.2);
             this.drawGraph();
+          })
+        Text(this.graphShowLabels ? '隐藏标签' : '显示标签')
+          .fontSize(12)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+          .margin({ right: 6 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.buttonBg)
+          .onClick(() => {
+            this.graphShowLabels = !this.graphShowLabels;
+            this.drawGraph();
+          })
+        Text('配色')
+          .fontSize(12)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+          .margin({ right: 6 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.buttonBg)
+          .onClick(() => {
+            this.graphPalette = (this.graphPalette + 1) % 3;
+            this.drawGraph();
+          })
+        Text('导出 PNG')
+          .fontSize(12)
+          .fontColor(this.theme.textOnAccent)
+          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+          .margin({ right: 6 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.buttonPrimaryBg)
+          .onClick(() => {
+            this.exportGraph();
           })
         Text('适应')
           .fontSize(12)

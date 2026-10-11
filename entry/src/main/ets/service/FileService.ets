@@ -68,6 +68,17 @@ export class FileService {
     }
   }
 
+  /** 写入二进制（导出画布 PNG 用）*/
+  static writeBinary(path: string, data: Uint8Array): void {
+    try {
+      const file = fs.openSync(path, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+      fs.writeSync(file.fd, data.buffer as ArrayBuffer);
+      fs.closeSync(file);
+    } catch (err) {
+      FileService.log(`writeBinary FAILED ${path}`);
+    }
+  }
+
   static attach(context: common.UIAbilityContext): void {
     FileService.ctx = context;
     FileService.log(`attach filesDir=${context.filesDir} cacheDir=${context.cacheDir}`);
