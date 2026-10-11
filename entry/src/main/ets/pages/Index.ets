@@ -1041,6 +1041,12 @@ struct Index {
     if (FileService.exists(legacyDir)) {
       FileService.remove(legacyDir);
     }
+    for (const meta of ['_undo.txt', '_report.txt']) {
+      const mp: string = `${root}/${meta}`;
+      if (FileService.exists(mp)) {
+        FileService.remove(mp);
+      }
+    }
     const last: string = this.settings.lastProjectRoot;
     if (last.length > 0 && FileService.isDir(last)) {
       // 示例工程自愈：版本升级后新增的示例文件要补齐（createSampleProject 内是逐文件存在性判断，幂等）
