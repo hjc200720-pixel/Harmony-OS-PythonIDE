@@ -505,7 +505,7 @@ const RENAME_UNDO_SCRIPT: string = [
   'n = 0',
   'if os.path.isdir(backup):',
   '    for fn in sorted(os.listdir(backup)):',
-  '        if fn == "_report.txt":',
+  '        if fn.startswith("_"):',
   '            continue',
   '        src = os.path.join(backup, fn)',
   '        tgt = os.path.join(root, fn.replace("__", "/"))',
@@ -1036,6 +1036,11 @@ struct Index {
     this.dialog = '';
     const root: string = FileService.projectRoot();
     FileService.ensureDir(root);
+    // 早期版本把中间文件写在工程内的 .harmonyide（已迁到应用私有目录），启动时清理工程内残留，保持工程干净
+    const legacyDir: string = `${root}/.harmonyide`;
+    if (FileService.exists(legacyDir)) {
+      FileService.remove(legacyDir);
+    }
     const last: string = this.settings.lastProjectRoot;
     if (last.length > 0 && FileService.isDir(last)) {
       // 示例工程自愈：版本升级后新增的示例文件要补齐（createSampleProject 内是逐文件存在性判断，幂等）
@@ -2037,7 +2042,7 @@ struct Index {
 
   /** 本地历史目录：<工程根>/.harmonyide/history/<文件名的哈希编码>/ */
   private historyDirFor(path: string): string {
-    return `${this.projectRoot}/.harmonyide/history/${this.historyHashOf(path)}`;
+    return `${FileService.context().filesDir}/.harmonyide/history/${this.historyHashOf(path)}`;
   }
 
   /** 毫秒时间戳 → 可读时间（本地历史/时间线显示用）*/
@@ -2110,7 +2115,7 @@ struct Index {
 
   /** 变更时间线（Vcs.FileHistory 语义）：汇总工程内所有文件的历史版本，按时间倒序 */
   private openChangeTimeline(): void {
-    const root: string = `${this.projectRoot}/.harmonyide/history`;
+    const root: string = `${FileService.context().filesDir}/.harmonyide/history`;
     if (!FileService.exists(root)) {
       this.showToast('暂无历史快照（每次保存前会自动记录）');
       return;
@@ -2455,9 +2460,9 @@ struct Index {
   private async loadDependencies(): Promise<void> {
     const dir: string = `${FileService.context().filesDir}/.harmonyide`;
     FileService.ensureDir(dir);
-    FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
+    FileService.ensureDir(`${FileService.context().filesDir}/.harmonyide`);
     const script: string = `${dir}/pip_list.py`;
-    const out: string = `${this.projectRoot}/.harmonyide/deps.txt`;
+    const out: string = `${FileService.context().filesDir}/.harmonyide/deps.txt`;
     FileService.writeText(script, DEPS_SCRIPT);
     this.setStatus('正在读取依赖清单…');
     const txt: string = await this.runPyAndRead(script, [out], out);
@@ -2481,9 +2486,9 @@ struct Index {
     }
     const dir: string = `${FileService.context().filesDir}/.harmonyide`;
     FileService.ensureDir(dir);
-    FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
+    FileService.ensureDir(`${FileService.context().filesDir}/.harmonyide`);
     const script: string = `${dir}/ast_scope.py`;
-    const out: string = `${this.projectRoot}/.harmonyide/hierarchy.txt`;
+    const out: string = `${FileService.context().filesDir}/.harmonyide/hierarchy.txt`;
     FileService.writeText(script, SCOPE_AST_SCRIPT);
     this.setStatus('正在用 ast 分析继承层级…');
     const txt: string = await this.runPyAndRead(script, [file, out, '__hierarchy__'], out);
@@ -2509,15 +2514,31 @@ struct Index {
       next = old.toUpperCase();
     } else if (style === 'strip') {
       next = old.startsWith('my_') ? old.substring(3) : old.replace(/_v2$/, '');
+    } else if (style === 'snake') {
+      // 驼峰 → 蛇形（PyCharm 的命名风格重构）
+      next = old.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+    } else if (style === 'camel') {
+      // 蛇形 → 小驼峰
+      const parts: string[] = old.split('_');
+      let acc: string = parts.length > 0 ? parts[0] : old;
+      for (let i: number = 1; i < parts.length; i++) {
+        const seg: string = parts[i];
+        acc += seg.length > 0 ? seg.charAt(0).toUpperCase() + seg.substring(1) : '';
+      }
+      next = acc;
+    }
+    if (next === old) {
+      this.setStatus(`名称未变化：${old} 已是该风格`);
+      this.renameRows = [`（${old} 已是该风格，未做修改）`];
+      return;
     }
     const dir: string = `${FileService.context().filesDir}/.harmonyide`;
     FileService.ensureDir(dir);
-    FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
     const script: string = `${dir}/ast_rename.py`;
     // 备份目录放在应用私有目录（工程之外），并让脚本排除 .harmonyide，避免自我改名与污染索引
     const backup: string = `${FileService.context().filesDir}/.harmonyide/rename_backup`;
     FileService.ensureDir(backup);
-    const out: string = `${this.projectRoot}/.harmonyide/rename_report.txt`;
+    const out: string = `${FileService.context().filesDir}/.harmonyide/rename_report.txt`;
     FileService.writeText(script, RENAME_AST_SCRIPT);
     this.setStatus(`正在重命名 ${old} → ${next}…`);
     const txt: string = await this.runPyAndRead(script, [this.projectRoot, old, next, backup, out], out);
@@ -2534,7 +2555,7 @@ struct Index {
     FileService.ensureDir(dir);
     const script: string = `${dir}/ast_rename_undo.py`;
     const backup: string = `${FileService.context().filesDir}/.harmonyide/rename_backup`;
-    const out: string = `${this.projectRoot}/.harmonyide/rename_undo.txt`;
+    const out: string = `${FileService.context().filesDir}/.harmonyide/rename_undo.txt`;
     FileService.writeText(script, RENAME_UNDO_SCRIPT);
     const txt: string = await this.runPyAndRead(script, [this.projectRoot, backup, out], out);
     const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : ['(没有可还原的备份)'];
@@ -2600,9 +2621,9 @@ struct Index {
   private async runInspection(showDialog: boolean = true): Promise<void> {
     const dir: string = `${FileService.context().filesDir}/.harmonyide`;
     FileService.ensureDir(dir);
-    FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
+    FileService.ensureDir(`${FileService.context().filesDir}/.harmonyide`);
     const script: string = `${dir}/ast_project.py`;
-    const out: string = `${this.projectRoot}/.harmonyide/inspect.txt`;
+    const out: string = `${FileService.context().filesDir}/.harmonyide/inspect.txt`;
     FileService.writeText(script, PROJECT_AST_SCRIPT);
     this.setStatus('正在检查全工程…');
     const txt: string = await this.runPyAndRead(script, [this.projectRoot, out, '__inspect__'], out);
@@ -2626,9 +2647,9 @@ struct Index {
   private async loadProjectClasses(): Promise<void> {
     const dir: string = `${FileService.context().filesDir}/.harmonyide`;
     FileService.ensureDir(dir);
-    FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
+    FileService.ensureDir(`${FileService.context().filesDir}/.harmonyide`);
     const script: string = `${dir}/ast_project.py`;
-    const out: string = `${this.projectRoot}/.harmonyide/project_classes.txt`;
+    const out: string = `${FileService.context().filesDir}/.harmonyide/project_classes.txt`;
     FileService.writeText(script, PROJECT_AST_SCRIPT);
     const txt: string = await this.runPyAndRead(script, [this.projectRoot, out], out);
     const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : [];
@@ -2641,9 +2662,9 @@ struct Index {
   private async loadProjectSymbols(): Promise<void> {
     const dir: string = `${FileService.context().filesDir}/.harmonyide`;
     FileService.ensureDir(dir);
-    FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
+    FileService.ensureDir(`${FileService.context().filesDir}/.harmonyide`);
     const script: string = `${dir}/ast_project.py`;
-    const out: string = `${this.projectRoot}/.harmonyide/project_symbols.txt`;
+    const out: string = `${FileService.context().filesDir}/.harmonyide/project_symbols.txt`;
     FileService.writeText(script, PROJECT_AST_SCRIPT);
     const txt: string = await this.runPyAndRead(script, [this.projectRoot, out], out);
     const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : [];
@@ -2669,9 +2690,9 @@ struct Index {
     }
     const dir: string = `${FileService.context().filesDir}/.harmonyide`;
     FileService.ensureDir(dir);
-    FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
+    FileService.ensureDir(`${FileService.context().filesDir}/.harmonyide`);
     const script: string = `${dir}/ast_project.py`;
-    const out: string = `${this.projectRoot}/.harmonyide/usages.txt`;
+    const out: string = `${FileService.context().filesDir}/.harmonyide/usages.txt`;
     FileService.writeText(script, PROJECT_AST_SCRIPT);
     this.setStatus(`正在全工程查找 ${symbol} 的定义与用法…`);
     const txt: string = await this.runPyAndRead(script, [this.projectRoot, out, symbol], out);
@@ -2736,8 +2757,8 @@ struct Index {
     const dir: string = `${FileService.context().filesDir}/.harmonyide`;
     FileService.ensureDir(dir);
     const script: string = `${dir}/ast_scope.py`;
-    const out: string = `${this.projectRoot}/.harmonyide/scope.txt`;
-    FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
+    const out: string = `${FileService.context().filesDir}/.harmonyide/scope.txt`;
+    FileService.ensureDir(`${FileService.context().filesDir}/.harmonyide`);
     FileService.writeText(script, SCOPE_AST_SCRIPT);
     this.setStatus('正在解析作用域（ast）…');
     const txt: string = await this.runPyAndRead(script, [file, out], out);
@@ -3940,9 +3961,9 @@ struct Index {
     try {
       const dir: string = `${FileService.context().filesDir}/.harmonyide`;
       FileService.ensureDir(dir);
-      FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
+      FileService.ensureDir(`${FileService.context().filesDir}/.harmonyide`);
       const script: string = `${dir}/ast_scope.py`;
-      const out: string = `${this.projectRoot}/.harmonyide/scope.txt`;
+      const out: string = `${FileService.context().filesDir}/.harmonyide/scope.txt`;
       FileService.writeText(script, SCOPE_AST_SCRIPT);
       const txt: string = await this.runPyAndRead(script, [file, out], out);
       if (txt.length === 0) {
@@ -10670,6 +10691,26 @@ if (this.settings.showBottomToolWindow) {
             .backgroundColor(this.theme.buttonBg)
             .onClick(() => {
               this.applyRename('strip');
+            })
+          Text('转蛇形')
+            .fontSize(12)
+            .fontColor(this.theme.textPrimary)
+            .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+            .margin({ right: 6 })
+            .borderRadius(4)
+            .backgroundColor(this.theme.buttonBg)
+            .onClick(() => {
+              this.applyRename('snake');
+            })
+          Text('转驼峰')
+            .fontSize(12)
+            .fontColor(this.theme.textPrimary)
+            .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+            .margin({ right: 6 })
+            .borderRadius(4)
+            .backgroundColor(this.theme.buttonBg)
+            .onClick(() => {
+              this.applyRename('camel');
             })
           Text('转大写')
             .fontSize(12)
