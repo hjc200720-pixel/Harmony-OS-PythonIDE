@@ -537,6 +537,10 @@ struct Index {
   /** Evaluate（PyCharm）：输入表达式 + 求值历史 */
   @State evalText: string = '';
   @State debugEvals: string[] = [];
+  /** Structure 面板范围：file = 当前文件；project = 全工程 */
+  @State structureScope: string = 'file';
+  @State projectPanelRows: string[] = [];
+
   /** 全工程类（跨文件转到类）*/
   @State classRows: string[] = [];
 
@@ -2363,6 +2367,15 @@ struct Index {
     const txt: string = await this.runPyAndRead(script, [this.projectRoot, out], out);
     const rows: string[] = txt.trim().length > 0 ? txt.trim().split('\n') : [];
     this.projectSymbols = rows;
+    // 面板格式：C/ƒ + 名字 + 相对文件:行（供 Structure 面板「工程」范围使用）
+    const panel: string[] = [];
+    for (const r of rows) {
+      const m: RegExpMatchArray | null = r.match(/^(类|函数)\s+(\S+)\s+(\S+):(\d+)/);
+      if (m !== null) {
+        panel.push(`${m[1] === '类' ? 'C' : 'ƒ'}  ${m[2]}    ${m[3]}:${m[4]}`);
+      }
+    }
+    this.projectPanelRows = panel;
     this.setStatus(`全工程符号：${rows.length} 个（ast 跨文件）`);
   }
 
@@ -6896,6 +6909,27 @@ struct Index {
                     .fontFamily(PyFont.ui)
                     .fontColor(this.theme.textPrimary)
                     .layoutWeight(1)
+                  // 范围切换：PyCharm 的 Structure 视图可切换 文件/工程 范围
+                  Text('文件')
+                    .fontSize(11)
+                    .fontColor(this.structureScope === 'file' ? this.theme.textOnAccent : this.theme.textSecondary)
+                    .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+                    .borderRadius(4)
+                    .backgroundColor(this.structureScope === 'file' ? this.theme.buttonPrimaryBg : this.theme.buttonBg)
+                    .onClick(() => {
+                      this.structureScope = 'file';
+                    })
+                  Text('工程')
+                    .fontSize(11)
+                    .fontColor(this.structureScope === 'project' ? this.theme.textOnAccent : this.theme.textSecondary)
+                    .margin({ left: 4 })
+                    .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+                    .borderRadius(4)
+                    .backgroundColor(this.structureScope === 'project' ? this.theme.buttonPrimaryBg : this.theme.buttonBg)
+                    .onClick(() => {
+                      this.structureScope = 'project';
+                      this.loadProjectSymbols();
+                    })
                 }
                 .width('100%')
                 .height(30)
@@ -6904,14 +6938,14 @@ struct Index {
 
                 Scroll() {
                   Column() {
-                    if (this.liveStructure.length === 0) {
-                      Text('（当前文件没有可识别的定义）')
+                    if ((this.structureScope === 'project' ? this.projectPanelRows.length : this.liveStructure.length) === 0) {
+                      Text(this.structureScope === 'project' ? '（正在扫描全工程符号…）' : '（当前文件没有可识别的定义）')
                         .fontSize(12)
                         .fontFamily(PyFont.ui)
                         .fontColor(this.theme.textDisabled)
                         .padding({ left: 12, top: 4 })
                     } else {
-                      ForEach(this.liveStructure, (row: string) => {
+                      ForEach(this.structureScope === 'project' ? this.projectPanelRows : this.liveStructure, (row: string) => {
                         Text(row)
                           .fontSize(12)
                           .fontFamily(PyFont.mono)
@@ -6920,6 +6954,28 @@ struct Index {
                           .maxLines(1)
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
                           .padding({ left: 12, right: 8, top: 4, bottom: 4 })
+                          // 点结构行 → 跳到定义（工程范围可跨文件）
+                          .onClick(() => {
+                            if (this.structureScope === 'project') {
+                              const m: RegExpMatchArray | null = row.match(/(\S+):(\d+)\s*$/);
+                              if (m !== null) {
+                                const rel: string = m[1];
+                                const line: number = Number.parseInt(m[2], 10);
+                                const target: string = `${this.projectRoot}/${rel}`;
+                                if (FileService.exists(target) && target !== this.editorFilePath) {
+                                  this.openFile(target, rel.substring(rel.lastIndexOf('/') + 1));
+                                }
+                                this.editorController.revealLine(line);
+                                this.setStatus(`已跳到 ${rel}:${line}`);
+                              }
+                            } else {
+                              const line: number = this.lineOfSymbol(row);
+                              if (line > 0) {
+                                this.editorController.revealLine(line);
+                                this.setStatus(`已跳到第 ${line} 行`);
+                              }
+                            }
+                          })
                           // PyCharm：Structure 视图右键 → StructureViewPopupMenu
                           .onMouse((event: MouseEvent) => {
                             if (event.button === MouseButton.Right) {
