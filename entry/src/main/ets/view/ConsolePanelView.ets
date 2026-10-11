@@ -143,7 +143,10 @@ export struct ConsolePanelView {
   @Prop problemCount: number = 0;
   /** 问题列表（可点行跳转到问题处）*/
   @Prop problemRows: string[] = [];
+  /** 问题类型筛选（all / 未使用导入 / 重复定义 / 空实现 / 未使用变量）*/
+  @State problemKind: string = 'all';
   gotoProblem: (row: string) => void = () => {};
+  runInspect: () => void = () => {};
   /** Run 工具窗工具条左侧显示的运行配置名 */
   @Prop runConfigName: string = '当前文件';
   /** 工具条「重新运行」 */
@@ -819,9 +822,37 @@ export struct ConsolePanelView {
         .backgroundColor(this.theme.consoleBg)
       } else if (this.activeTab === TAB_PROBLEMS) {
         if (this.problemRows.length > 0) {
+          // 类型筛选（Problems 视图的按类别过滤）
+          Row() {
+            // 运行检查：问题视图自带的入口（PyCharm 的 Problems 工具栏语义），不依赖随处搜索
+            Text('运行检查')
+              .fontSize(11)
+              .fontColor(this.theme.textOnAccent)
+              .margin({ right: 8 })
+              .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+              .borderRadius(4)
+              .backgroundColor(this.theme.buttonPrimaryBg)
+              .onClick(() => {
+                this.runInspect();
+              })
+            ForEach(['all', '未使用导入', '重复定义', '空实现', '未使用变量'], (kind: string, index: number) => {
+              Text(kind === 'all' ? '全部' : kind)
+                .fontSize(11)
+                .fontColor(this.problemKind === kind ? this.theme.textOnAccent : this.theme.textSecondary)
+                .margin({ right: 6 })
+                .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+                .borderRadius(4)
+                .backgroundColor(this.problemKind === kind ? this.theme.buttonPrimaryBg : this.theme.buttonBg)
+                .onClick(() => {
+                  this.problemKind = kind;
+                })
+            }, (kind: string, index: number) => `pf_${index}_${kind}`)
+          }
+          .width('100%')
+          .padding({ left: 4, top: 2, bottom: 4 })
           Scroll(this.scroller) {
             Column() {
-              ForEach(this.problemRows, (row: string, index: number) => {
+              ForEach(this.problemRows.filter((row: string) => this.problemKind === 'all' || row.indexOf(this.problemKind) === 0), (row: string, index: number) => {
                 Text(row)
                   .fontSize(CONSOLE_FONT_SIZE)
                   .fontFamily(PyFont.mono)
@@ -845,6 +876,19 @@ export struct ConsolePanelView {
           .scrollBar(BarState.Auto)
           .backgroundColor(this.theme.consoleBg)
         } else if (this.problemCount === 0) {
+          Row() {
+            Text('运行检查')
+              .fontSize(11)
+              .fontColor(this.theme.textOnAccent)
+              .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+              .borderRadius(4)
+              .backgroundColor(this.theme.buttonPrimaryBg)
+              .onClick(() => {
+                this.runInspect();
+              })
+          }
+          .width('100%')
+          .padding({ left: 4, top: 2, bottom: 4 })
           Column() {
             Text('未发现问题')
               .fontSize(CONSOLE_FONT_SIZE)

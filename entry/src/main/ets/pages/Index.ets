@@ -7623,6 +7623,9 @@ struct Index {
                   evalDebug: () => this.evalDebug(),
                   debugLocals: this.debugLocals,
                   problemRows: this.problemRows,
+                  runInspect: () => {
+                    this.runInspection(true);
+                  },
                   gotoProblem: (row: string) => {
                     const m: RegExpMatchArray | null = row.match(/([^\s:]+):(\d+)\s/);
                     if (m !== null) {
@@ -7896,6 +7899,9 @@ if (this.settings.showBottomToolWindow) {
                   evalDebug: () => this.evalDebug(),
                   debugLocals: this.debugLocals,
                   problemRows: this.problemRows,
+                  runInspect: () => {
+                    this.runInspection(true);
+                  },
                   gotoProblem: (row: string) => {
                     const m: RegExpMatchArray | null = row.match(/([^\s:]+):(\d+)\s/);
                     if (m !== null) {
