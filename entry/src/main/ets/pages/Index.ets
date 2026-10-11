@@ -213,6 +213,11 @@ function toolWindowPanels(): ToolWindowPanel[] {
     new ToolWindowPanel('SciView', '数据视图',
       ['绘图', '变量'],
       '没有可显示的科学数据', 'PyCharm 的 SciView 展示 matplotlib 图与运行期变量。'),
+    // AI Assistant（AI 聊天）：空态文案取自 PyCharm 的 welcome.screen.placeholder.aiAssistant
+    new ToolWindowPanel('AIAssistant', 'AI 聊天',
+      ['使用 AI 生成提交摘要', '新建聊天'],
+      '今天我能为您提供什么帮助?',
+      'PyCharm 的 AI Assistant 在工具窗里提供对话与代码生成；本 IDE 未集成云端模型，界面与入口按 PyCharm 对齐，能力待接入。'),
     // Jupyter Variables
     new ToolWindowPanel('Jupyter Variables', 'Jupyter 变量',
       ['刷新', '导出'],
@@ -7904,7 +7909,7 @@ struct Index {
               .alignItems(VerticalAlign.Center)
 
               // 内容（复用工具窗占位内容构建器）
-              this.ToolWindowPanelContent()
+              this.ToolWindowPanelContent(this.rightToolWindow.length > 0 ? this.rightToolWindow : this.twPanelId)
             }
             .width(this.rightPanelW)
             .height('100%')
@@ -8766,6 +8771,7 @@ if (this.settings.showBottomToolWindow) {
     if (kind === 'bookmarks') {
       // PyCharm: <toolWindow id="Bookmarks" anchor="left"/> —— 本 IDE 内为占位面板
       this.twPanelId = 'Bookmarks';
+      this.rightToolWindow = 'Bookmarks';
       return;
     }
     if (kind === 'more') {
@@ -9602,7 +9608,7 @@ if (this.settings.showBottomToolWindow) {
           } else if (this.dialog === 'todo') {
             this.TodoContent()
           } else if (this.dialog === 'twPanel') {
-            this.ToolWindowPanelContent()
+            this.ToolWindowPanelContent(this.twPanelId)
           } else if (this.dialog === 'projectList') {
             this.ProjectListContent()
           } else if (this.dialog === 'notifications') {
@@ -9933,7 +9939,9 @@ if (this.settings.showBottomToolWindow) {
       this.settings.showBottomToolWindow = !this.settings.showBottomToolWindow;
       this.settings = this.settings;
     } else if (key === 'right') {
-      this.rightToolWindow = this.rightToolWindow.length > 0 ? '' : 'ai';
+      // 'ai' 不是真实工具窗 id：会导致标题显示「AI 聊天」而内容仍是上一次的（标题/内容错位）
+      this.twPanelId = 'AIAssistant';
+      this.rightToolWindow = this.rightToolWindow.length > 0 ? '' : 'AIAssistant';
     }
     FileService.log(`customizeUI toggle ${key}`);
   }
@@ -10526,9 +10534,9 @@ if (this.settings.showBottomToolWindow) {
 
 /** 占位工具窗界面：标题 + 工具条（PyCharm 的按钮名）+ 空态 + 说明 */
   @Builder
-  ToolWindowPanelContent() {
+  ToolWindowPanelContent(panelId: string) {
     Column() {
-      ForEach(toolWindowPanels().filter((p: ToolWindowPanel) => p.id === this.twPanelId), (p: ToolWindowPanel) => {
+      ForEach(toolWindowPanels().filter((p: ToolWindowPanel) => p.id === panelId), (p: ToolWindowPanel) => {
         // 工具条：按 PyCharm 该工具窗的 action group 逐条显示
         Row() {
           ForEach(p.actions, (a: string) => {
