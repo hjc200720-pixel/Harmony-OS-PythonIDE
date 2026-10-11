@@ -80,3 +80,38 @@
 - **图标：只能证明命名/来源不一致（42/98 个 PyCharm 无同名），不能证明图形画错** —— 应用 SVG 为自绘，无法逐像素比对。
 - **功能不完全的主要残留是 6 个占位工具窗**（书签/覆盖率/端点/数据视图/Jupyter 变量/TODO）与 8 类引擎缺失动作；这些在应用里都有**诚实提示**，不会误报成功。
 - 本轮**未做**：逐项修复占位工具窗（工作量大，需你确认优先级）；图标重命名/替换（需要能拿到 PyCharm 的原始 SVG 授权与素材）。
+## 九、两侧竖条（工具窗栏）逐项核实 —— 依据 PyCharm plugin.xml 的 anchor
+
+从 1369 个 jar 内的 `plugin.xml` 抽出 34 个 `<toolWindow id=… anchor=…>`：
+
+| 工具窗 | PyCharm anchor | 应用位置 | 判定 |
+|---|---|---|---|
+| Project | left | 左栏 | ✓ |
+| Structure | left | 左栏 | ✓（改名「结构」）|
+| Commit | left | 左栏（无 .git 时隐藏）| ✓ |
+| AIAssistant | right | 右栏 | ✓（PyCharm 中文=AI 聊天）|
+| Notifications | right | 右栏 | ✓ |
+| Database | right | 右栏 | ✓ |
+| Python Packages | right | 右栏 | ✓（改名「软件包」）|
+| **Python Console** | **right** | ✗ 只出现在底部页签 | **❌ 已修：加入右栏** |
+| Plots | right | 右栏（文字「绘图」）| ✓ 文字一致；但语义不同（应用是 Graph/图表）|
+| SciView | right | 占位 | 中文名「数据视图」与应用一致 ✓ |
+| Terminal / Problems View / Version Control / TODO | bottom | 底部页签 | ✓ |
+| Gradle / Maven / Diagrams / Services | 未在已扫描 XML 中找到定义 | — | 待补提取（对应插件未含 plugin.xml 或未扫描到）|
+
+### 本轮修复（真机已验证）
+
+| # | 问题 | 依据 | 处理 |
+|---|---|---|---|
+| 1 | 左栏显示英文 **Structure** | `toolwindow.stripe.Structure`（中文=结构；`action.FileStructurePopup=文件结构(_I)` 佐证）| 改为「结构」✓ |
+| 2 | 右栏显示英文 **Python Packages** | `toolwindow.stripe.Python_Packages_Tool=Python 软件包` | 改为「软件包」✓ |
+| 3 | **Python Console 未出现在右栏** | `<toolWindow id="Python Console" anchor="right"/>` | 加入右栏 ✓ |
+| 4 | 3 字标签被截断（「控制台」显示为「控制」）| 实测：37px 按钮放不下 3 个中文字 | 按钮加宽 37→44 ✓ |
+
+截图：`_cache/device/rails6.jpeg`
+
+### 仍是待解决的问题（如实）
+
+- **语义错配**：应用的「绘图」实际打开 Graph/图表，而 PyCharm 的 `Plots`（绘图）是**数据绘图**；图标 `twPlots*` 亦为自绘。
+- **`AI 聊天` 与 `Python 控制台` 在竖条里被折成两行**（应用用 `\n` 硬折行）—— 与 PyCharm「单行标签 + 自动折行」的视觉结果等价，但字符串不同。
+- **Gradle / Maven / Diagrams / Services 的侧边归属未核实**：本次扫描的 34 个 toolWindow 定义里没有它们，需要从对应插件的 plugin.xml 再提取。

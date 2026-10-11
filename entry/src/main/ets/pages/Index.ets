@@ -85,7 +85,7 @@ function settingsTree(): SettingsNode[] {
     new SettingsNode('project', '默认项目', true, ''),
     new SettingsNode('project.structure', '项目结构', false, 'project'),
     new SettingsNode('project.interpreter', 'Python 解释器', false, 'project'),
-    new SettingsNode('project.packages', 'Python Packages', false, 'project'),
+    new SettingsNode('project.packages', 'Python 软件包', false, 'project'),
     new SettingsNode('project.vcs', '版本控制', false, 'project'),
     new SettingsNode('project.buildTools', '构建工具', false, 'project'),
     // 构建、执行、部署
@@ -150,7 +150,7 @@ function toolWindows(): ToolWindowInfo[] {
     new ToolWindowInfo('Gradle', 'Gradle', 'right', false),
     new ToolWindowInfo('Maven', 'Maven', 'right', false),
     new ToolWindowInfo('Plots', '绘图', 'right', true),
-    new ToolWindowInfo('Python Packages', 'Python Packages', 'right', true),
+    new ToolWindowInfo('Python Packages', 'Python 软件包', 'right', true),
     new ToolWindowInfo('Python Console', 'Python 控制台', 'right', true),
     new ToolWindowInfo('Coverage', '覆盖率', 'right', false),
     new ToolWindowInfo('Endpoints', '端点', 'right', false),
@@ -8368,6 +8368,8 @@ if (this.settings.showBottomToolWindow) {
           this.SideToolButton('maven', 'right')
           this.SideToolButton('plots', 'right')
           this.SideToolButton('packages', 'right')
+          // PyCharm: <toolWindow id="Python Console" anchor="right"/> —— 归属右侧
+          this.SideToolButton('pythonConsole', 'right')
         }
         .width(this.rightStripW)
         // 通高：主工具栏下方直到状态栏上沿（状态栏同为 #26282C，视觉上继续到底）
@@ -8820,7 +8822,7 @@ if (this.settings.showBottomToolWindow) {
       this.showInfo(kind === 'gradle' ? 'Gradle' : 'Maven', [
         'PyCharm 的 Gradle/Maven 工具窗用于 JVM 项目的构建与依赖管理。',
         '本 IDE 面向 Python（CPython + pip），不使用这两个构建工具。',
-        'Python 依赖请在「Python Packages」面板里用 pip 安装。'
+        'Python 依赖请在「Python 软件包」面板里用 pip 安装。'
       ]);
       return;
     }
@@ -8964,16 +8966,16 @@ if (this.settings.showBottomToolWindow) {
       return '学习';
     }
     if (kind === 'structure') {
-      return 'Structure';
+      return '结构';
     }
     if (kind === 'more') {
       return '⋯';
     }
     if (kind === 'processOutput') {
-      return 'Python\n进程输出';
+      return '进程输出';
     }
     if (kind === 'pythonConsole') {
-      return 'Python\n控制台';
+      return '控制台';
     }
     if (kind === 'services') {
       return '服务';
@@ -8988,7 +8990,7 @@ if (this.settings.showBottomToolWindow) {
       return '版本控制';
     }
     if (kind === 'packages') {
-      return 'Python\nPackages';
+      return '软件包';
     }
     if (kind === 'notifications') {
       return '通知';
@@ -9047,7 +9049,7 @@ if (this.settings.showBottomToolWindow) {
     }
     // 主题 StripeToolbar.Button.size = 37,40 → 项 37 宽 × 40 高
     // 内边距 left = 4,6,4,2；right = 4,2,4,6（主题 StripeToolbar.Button.*StripeIconWithName.padding）
-    .width(37)
+    .width(44)
     .height(40)
     .padding({ top: 4, bottom: 4, left: side === 'left' ? 6 : 2, right: side === 'left' ? 2 : 6 })
     .justifyContent(FlexAlign.Center)
@@ -12316,10 +12318,10 @@ if (this.settings.showBottomToolWindow) {
                   SettingsService.save(this.settings);
                 })
             }.width('100%').margin({ bottom: 12 })
-            Text('Python Packages 面板可浏览已安装包；安装依赖于内嵌 pip（当前缺 _ssl，联网安装不可用）。')
+            Text('Python 软件包面板可浏览已安装包；安装依赖于内嵌 pip（当前缺 _ssl，联网安装不可用）。')
               .fontSize(12.5).fontColor(this.theme.textSecondary)
           } else if (this.settingsCategory === 'plugins') {
-            Text('已内置实现（替代插件提供的工具窗）：通知 / Python Packages / 数据库·Gradle·Maven·图表（说明页）')
+            Text('已内置实现（替代插件提供的工具窗）：通知 / Python 软件包 / 数据库·Gradle·Maven·图表（说明页）')
               .fontSize(12.5).fontColor(this.theme.textSecondary).margin({ bottom: 8 })
             Text('本版本不含插件市场与插件加载机制。')
               .fontSize(12.5).fontColor(this.theme.textSecondary)
@@ -12365,7 +12367,7 @@ if (this.settings.showBottomToolWindow) {
               .fontSize(12.5).fontColor(this.theme.textSecondary).margin({ bottom: 8 })
             Text('已实现的设置页：外观 / 编辑器·常规·字体·颜色方案·文件编码 / ')
               .fontSize(12.5).fontColor(this.theme.textSecondary)
-            Text('Python 解释器 / Python Packages / 运行配置 / 键位映射 / 插件 / 高级设置 / 版本控制·Git / 终端 / Python')
+            Text('Python 解释器 / Python 软件包 / 运行配置 / 键位映射 / 插件 / 高级设置 / 版本控制·Git / 终端 / Python')
               .fontSize(12.5).fontColor(this.theme.textSecondary)
           }
         }
