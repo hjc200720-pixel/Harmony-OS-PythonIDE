@@ -412,6 +412,12 @@ struct Index {
   @State graphNodes: string[] = [];
   @State graphEdges: string[] = [];
   @State graphLayout: string = 'tree';
+  /** 边样式（PyCharm Graph.EdgeRealizerGroup：直线/折线）*/
+  @State graphEdgeStyle: string = 'straight';
+  /** 布局方向（TreeLayoutGroup：上下/左右）*/
+  @State graphDir: string = 'v';
+  /** 缩放（DefaultGraphToolbar：放大/缩小/适应）*/
+  @State graphZoom: number = 1.0;
   private graphCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true));
 
   /** Watches（监视表达式）：表达式 + 最近一次求值结果 */
@@ -1870,19 +1876,29 @@ struct Index {
     }
     // 布局：一列一行（tree 竖排）或两列（orthogonal 横排）
     const twoCol: boolean = this.graphLayout === 'orthogonal';
-    const boxW: number = 150;
-    const boxH: number = 34;
-    const gapX: number = 240;
-    const gapY: number = 56;
+    const z: number = this.graphZoom;
+    const boxW: number = 150 * z;
+    const boxH: number = 34 * z;
+    const gapX: number = 240 * z;
+    const gapY: number = 56 * z;
+    const horizontal: boolean = this.graphDir === 'h';
     const pos: Map<string, number[]> = new Map<string, number[]>();
     for (let i: number = 0; i < n; i++) {
-      const col: number = twoCol ? (i % 2) : 0;
-      const row: number = twoCol ? Math.floor(i / 2) : i;
+      // 方向：v = 自上而下逐行；h = 自左而右逐列（两列布局时按方向换轴）
+      let col: number = 0;
+      let row: number = 0;
+      if (horizontal) {
+        col = twoCol ? Math.floor(i / 2) : i;
+        row = twoCol ? (i % 2) : 0;
+      } else {
+        col = twoCol ? (i % 2) : 0;
+        row = twoCol ? Math.floor(i / 2) : i;
+      }
       pos.set(nodes[i], [20 + col * gapX, 16 + row * gapY]);
     }
     // 先画边
     ctx.strokeStyle = '#5A7FA8';
-    ctx.lineWidth = 1.4;
+    ctx.lineWidth = 1.4 * z;
     for (const e of this.graphEdges) {
       const parts: string[] = e.split('>');
       const a: number[] | undefined = pos.get(parts[0]);
@@ -1891,8 +1907,29 @@ struct Index {
         continue;
       }
       ctx.beginPath();
-      ctx.moveTo(a[0] + boxW / 2, a[1] + boxH);
-      ctx.lineTo(b[0] + boxW / 2, b[1]);
+      if (this.graphEdgeStyle === 'polyline') {
+        // 折线（正交走线）：先下/右一半，再横/纵，最后进入目标
+        const ax: number = a[0] + boxW / 2;
+        const ay: number = a[1] + boxH;
+        const bx: number = b[0] + boxW / 2;
+        const by: number = b[1];
+        if (this.graphDir === 'h') {
+          const midY: number = (ay + by) / 2;
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(ax, midY);
+          ctx.lineTo(bx, midY);
+          ctx.lineTo(bx, by);
+        } else {
+          const midX: number = (ax + bx) / 2;
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(ax, (ay + by) / 2);
+          ctx.lineTo(bx, (ay + by) / 2);
+          ctx.lineTo(bx, by);
+        }
+      } else {
+        ctx.moveTo(a[0] + boxW / 2, a[1] + boxH);
+        ctx.lineTo(b[0] + boxW / 2, b[1]);
+      }
       ctx.stroke();
     }
     // 再画节点
@@ -1908,8 +1945,8 @@ struct Index {
       ctx.fill();
       ctx.stroke();
       ctx.fillStyle = '#E6E6E6';
-      ctx.font = '13px monospace';
-      ctx.fillText(nodes[i], p[0] + 10, p[1] + 22);
+      ctx.font = `${Math.round(13 * z)}px monospace`;
+      ctx.fillText(nodes[i], p[0] + 10 * z, p[1] + 22 * z);
     }
   }
 
@@ -9546,14 +9583,58 @@ if (this.settings.showBottomToolWindow) {
             this.graphLayout = 'orthogonal';
             this.drawGraph();
           })
-        Text('重新布局')
+        Text(this.graphEdgeStyle === 'straight' ? '折线' : '直线')
+          .fontSize(12)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+          .margin({ right: 6 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.buttonBg)
+          .onClick(() => {
+            this.graphEdgeStyle = this.graphEdgeStyle === 'straight' ? 'polyline' : 'straight';
+            this.drawGraph();
+          })
+        Text(this.graphDir === 'v' ? '左右' : '上下')
+          .fontSize(12)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+          .margin({ right: 6 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.buttonBg)
+          .onClick(() => {
+            this.graphDir = this.graphDir === 'v' ? 'h' : 'v';
+            this.drawGraph();
+          })
+        Text('－')
+          .fontSize(12)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+          .margin({ right: 6 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.buttonBg)
+          .onClick(() => {
+            this.graphZoom = Math.max(0.6, this.graphZoom - 0.2);
+            this.drawGraph();
+          })
+        Text('＋')
+          .fontSize(12)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+          .margin({ right: 6 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.buttonBg)
+          .onClick(() => {
+            this.graphZoom = Math.min(1.8, this.graphZoom + 0.2);
+            this.drawGraph();
+          })
+        Text('适应')
           .fontSize(12)
           .fontColor(this.theme.textPrimary)
           .padding({ left: 10, right: 10, top: 4, bottom: 4 })
           .borderRadius(4)
           .backgroundColor(this.theme.buttonBg)
           .onClick(() => {
-            this.buildGraph();
+            this.graphZoom = 1.0;
             this.drawGraph();
           })
       }
