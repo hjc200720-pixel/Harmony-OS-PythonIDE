@@ -769,3 +769,19 @@ python _cache/pycharm/audit_v3.py      # → _cache/pycharm/audit_groups_full.md
 - 书签三处动作接通真实实现：`edit.toggleBookmark`(F11) / `edit.showBookmarks`(Shift+F11) / `edit.nextBookmark`（跳下一个书签）✓
 - TabList 派发 bug 修复：`tabListItem` 独立派发到 `onTabListPick`（此前共用 `tabMenuItem` → 全部落到"最近的文件"）✓
 - ⋮(TabList) 三项占位改为真实功能：最近的位置 / 书签 / 显示缩略图 ✓
+
+### 0.44 调试器：暂停语义已确认（真挂起），面板不可见属布局问题
+
+**读原生钩子 kDebugHookScript（entry/src/main/cpp/napi_init.cpp:176-300）确认**：
+    command = _pyide_bridge.pause('step' if stepping else 'breakpoint', payload)
+Python 侧把原生 pause() 的返回值当命令（stop/step/stepinto/stepout/continue）
+⇒ **暂停是真挂起**（阻塞等 IDE 指令），DebugPanel 的「继续/单步/步入」确实能驱动会话 ✓。
+断点命中条件、作用域过滤（只在工程根内跟踪）、帧深度（单步跳过）均已实现 ✓。
+
+**因此剩余问题是显示/布局，不是调试能力**：
+onDebugPause 确实被调用（控制台出现「已暂停 main.py:11 (main)」✓），debugPaused 也置 true ✓，
+但暂停瞬间 dump 里没有任何面板元素（继续/单步/局部变量/调用栈 全不见）✗。
+推断：DebugPanel 处在编辑器岛内部的条件分支里，被布局裁掉或压成 0 高 ✗。
+
+**下一步（明确）**：把 DebugPanel 移到必然可见处 —— 建议做成底部工具窗的一个标签页
+（与 运行/版本控制/问题/终端/Python 控制台 并列的「调试」页），再重跑「断点→调试→单步」验证变量与调用栈。
