@@ -436,7 +436,7 @@ const PROJECT_AST_SCRIPT: string = [
 ].join('\n');
 
 const SE_ACTIONS: string[] = [
-  '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy', '查找用法|edit.findUsages', '检查未使用导入|code.inspect', '变更时间线|vcs.fileHistory', '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '保存|file.save', '比较当前文件与磁盘版本|diff.active',
+  '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy', '保存|file.save', '查找用法|edit.findUsages', '检查未使用导入|code.inspect', '变更时间线|vcs.fileHistory', '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '比较当前文件与磁盘版本|diff.active',
   '循环补全|ed.hippieComplete', '补全语句|ed.completeStatement',
   '撤销|edit.undo', '重做|edit.redo', '全部保存|file.saveAll',
   '在文件中查找|edit.findInFiles', '随处搜索|edit.searchEverywhere', '转到行|nav.gotoLine',
@@ -2404,7 +2404,7 @@ struct Index {
   }
 
   /** 全工程检查（ast）：未使用导入 */
-  private async runInspection(): Promise<void> {
+  private async runInspection(showDialog: boolean = true): Promise<void> {
     const dir: string = `${FileService.context().filesDir}/.harmonyide`;
     FileService.ensureDir(dir);
     FileService.ensureDir(`${this.projectRoot}/.harmonyide`);
@@ -2417,6 +2417,11 @@ struct Index {
     this.inspectRows = rows;
     // 同时放进「问题」工具窗（常驻可见、可点行跳转）
     this.problemRows = rows;
+    if (!showDialog) {
+      // 静默模式（保存触发）：只刷新问题列表，不弹对话框、不强制打开工具窗
+      this.setStatus(`已保存 · 检查：${rows.length} 条`);
+      return;
+    }
     this.settings.showBottomToolWindow = true;
     this.consoleTab = 'problems';
     this.dialogTitle = `检查结果（${rows.length} 条）`;
@@ -4415,6 +4420,8 @@ struct Index {
       tab.markSaved(tab.text);
       this.tabs = this.tabs.slice();
       this.setStatus(`已保存 ${tab.name}`);
+      // PyCharm 语义：保存后自动跑检查并刷新「问题」视图（静默，不弹对话框）
+      this.runInspection(false);
     } catch (err) {
       this.appendError(`保存失败：${tab.path}\n${JSON.stringify(err)}`);
     }
