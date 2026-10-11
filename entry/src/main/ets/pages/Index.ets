@@ -436,7 +436,7 @@ const PROJECT_AST_SCRIPT: string = [
 ].join('\n');
 
 const SE_ACTIONS: string[] = [
-  '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy', '保存|file.save', '查找用法|edit.findUsages', '检查未使用导入|code.inspect', '变更时间线|vcs.fileHistory', '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '比较当前文件与磁盘版本|diff.active',
+  '转到符号|nav.gotoSymbol', '转到类|nav.gotoClass', '切换器|nav.switcher', '继承层级|nav.hierarchy', '跨文件补全|edit.completeCrossFile', '保存|file.save', '查找用法|edit.findUsages', '检查未使用导入|code.inspect', '变更时间线|vcs.fileHistory', '外部系统：任务与依赖|externalSystem.show', '作用域视图|scope.view', '图表：当前文件关系图|graph.neighborhood', '与剪贴板比较|diff.clipboard', '查看断点|debug.viewBreakpoints', '本地历史|history.show', '比较当前文件与磁盘版本|diff.active',
   '循环补全|ed.hippieComplete', '补全语句|ed.completeStatement',
   '撤销|edit.undo', '重做|edit.redo', '全部保存|file.saveAll',
   '在文件中查找|edit.findInFiles', '随处搜索|edit.searchEverywhere', '转到行|nav.gotoLine',
@@ -593,6 +593,11 @@ struct Index {
   /** Evaluate（PyCharm）：输入表达式 + 求值历史 */
   @State evalText: string = '';
   @State debugEvals: string[] = [];
+  /** 跨文件补全：当前文件导入的模块 + 选中模块的成员 */
+  @State completeModules: string[] = [];
+  @State completeMembers: string[] = [];
+  @State completeModule: string = '';
+
   /** 问题工具窗的行 */
   @State problemRows: string[] = [];
 
@@ -2401,6 +2406,58 @@ struct Index {
     this.setStatus(rows.length > 0 && rows[0].indexOf('类 ') === 0
       ? `继承层级：${rows.length} 行（ast）`
       : '当前文件没有类定义');
+  }
+
+  /** 跨文件补全（PyCharm 的基本补全语义）：先列本文件导入的模块，再列该模块的成员 */
+  private openCrossFileComplete(): void {
+    const text: string = this.editorSeedText;
+    const mods: string[] = [];
+    const lines: string[] = text.split('\n');
+    for (const raw of lines) {
+      const t: string = raw.trim();
+      const m1: RegExpMatchArray | null = t.match(/^import\s+([A-Za-z_][A-Za-z0-9_.]*)/);
+      if (m1 !== null) {
+        const top: string = m1[1].split('.')[0];
+        if (mods.indexOf(top) < 0) {
+          mods.push(top);
+        }
+        continue;
+      }
+      const m2: RegExpMatchArray | null = t.match(/^from\s+([A-Za-z_][A-Za-z0-9_.]*)\s+import\s+(.+)$/);
+      if (m2 !== null) {
+        const top: string = m2[1].split('.')[0];
+        if (mods.indexOf(top) < 0) {
+          mods.push(top);
+        }
+      }
+    }
+    this.completeModules = mods;
+    this.completeMembers = [];
+    this.completeModule = '';
+    this.dialogTitle = mods.length > 0 ? `跨文件补全（${mods.length} 个已导入模块）` : '跨文件补全：当前文件没有 import';
+    this.dialog = 'complete';
+    if (mods.length > 0) {
+      this.loadProjectSymbols();
+    }
+  }
+
+  /** 选中模块 → 从工程索引里筛出该模块文件的成员 */
+  private completeFromModule(mod: string): void {
+    const members: string[] = [];
+    for (const row of this.projectSymbols) {
+      const m: RegExpMatchArray | null = row.match(/^(类|函数)\s+(\S+)\s+(\S+):(\d+)/);
+      if (m === null) {
+        continue;
+      }
+      const file: string = m[3];
+      const base: string = file.substring(file.lastIndexOf('/') + 1).replace(/\.py$/, '');
+      if (base === mod) {
+        members.push(`${m[2]}    ${file}:${m[4]}`);
+      }
+    }
+    this.completeModule = mod;
+    this.completeMembers = members;
+    this.setStatus(`${mod} 的成员：${members.length} 个`);
   }
 
   /** 全工程检查（ast）：未使用导入 */
@@ -5238,6 +5295,10 @@ struct Index {
       // MoreRunToolbarActions：运行相关的更多操作（PyCharm 里是 运行/调试/编辑配置… 的弹层）
       this.dialogTitle = '运行';
       this.dialog = 'runConfig';
+      return;
+    }
+    if (action === 'edit.completeCrossFile' || action === 'edit.complete') {
+      this.openCrossFileComplete();
       return;
     }
     if (action === 'code.inspect' || action === 'code.inspectUnusedImports') {
@@ -9297,6 +9358,8 @@ if (this.settings.showBottomToolWindow) {
             this.FindInFilesContent()
           } else if (this.dialog === 'breakpoints') {
       this.BreakpointsContent()
+    } else if (this.dialog === 'complete') {
+      this.CompleteContent()
     } else if (this.dialog === 'inspect') {
       this.InspectContent()
     } else if (this.dialog === 'gotoclass') {
@@ -10372,6 +10435,75 @@ if (this.settings.showBottomToolWindow) {
         }
         .width('100%')
         .constraintSize({ maxHeight: 380 })
+        .scrollBar(BarState.Auto)
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 跨文件补全内容：模块 → 成员 → 插入「模块.成员」*/
+  @Builder
+  CompleteContent() {
+    Column() {
+      if (this.completeMembers.length > 0) {
+        Text(`${this.completeModule} 的成员（点行插入 ${this.completeModule}.成员）`)
+          .fontSize(11.5)
+          .fontColor(this.theme.textDisabled)
+          .padding({ left: 8, top: 2, bottom: 4 })
+        Scroll() {
+          Column() {
+            ForEach(this.completeMembers, (row: string, index: number) => {
+              Text(row)
+                .fontSize(12)
+                .fontFamily(PyFont.mono)
+                .fontColor(this.theme.textPrimary)
+                .width('100%')
+                .height(26)
+                .padding({ left: 8, right: 8 })
+                .maxLines(1)
+                .onClick(() => {
+                  const m: RegExpMatchArray | null = row.match(/^(\S+)\s+/);
+                  if (m !== null) {
+                    const insert: string = `${this.completeModule}.${m[1]}`;
+                    this.dialog = '';
+                    this.editorController.insertText(insert);
+                    this.setStatus(`已插入补全：${insert}`);
+                  }
+                })
+            }, (row: string, index: number) => `cm_${index}_${row}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 420 })
+        .scrollBar(BarState.Auto)
+      } else {
+        Text('点一个已导入的模块，查看它有哪些成员')
+          .fontSize(11.5)
+          .fontColor(this.theme.textDisabled)
+          .padding({ left: 8, top: 2, bottom: 4 })
+        Scroll() {
+          Column() {
+            ForEach(this.completeModules, (mod: string, index: number) => {
+              Text(mod)
+                .fontSize(12)
+                .fontFamily(PyFont.mono)
+                .fontColor(this.theme.debugAccent)
+                .width('100%')
+                .height(26)
+                .padding({ left: 8, right: 8 })
+                .onClick(() => {
+                  this.completeFromModule(mod);
+                })
+            }, (mod: string, index: number) => `cmd_${index}_${mod}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 420 })
         .scrollBar(BarState.Auto)
       }
     }
