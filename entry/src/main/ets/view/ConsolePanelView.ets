@@ -129,6 +129,9 @@ export struct ConsolePanelView {
   @Prop evalText: string = '';
   @Prop debugEvals: string[] = [];
   onEvalText: (value: string) => void = () => {};
+  /** 变量 [[名, 值]]，点击某行即对该变量求值（无需输入）*/
+  @Prop debugLocals: string[][] = [];
+  evalVar: (name: string) => void = () => {};
   evalDebug: () => void = () => {};
   @Prop running: boolean = false;
   @Prop replPrompt: string = '>>> ';
@@ -586,6 +589,30 @@ export struct ConsolePanelView {
         }
         .width('100%')
         .padding({ left: 8, top: 4, bottom: 4 })
+        if (this.debugLocals.length > 0) {
+          Column() {
+            ForEach(this.debugLocals, (pair: string[], index: number) => {
+              Row() {
+                Text(`${pair.length >= 2 ? pair[0] : '?'} = ${pair.length >= 2 ? pair[1] : ''}`)
+                  .fontSize(12)
+                  .fontFamily(PyFont.mono)
+                  .fontColor(this.theme.textPrimary)
+                  .layoutWeight(1)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
+              .width('100%')
+              .padding({ left: 16, right: 8, top: 2, bottom: 2 })
+              .onClick(() => {
+                if (pair.length >= 1) {
+                  this.evalVar(pair[0]);
+                }
+              })
+            }, (pair: string[], index: number) => `lv_${index}_${pair.join('|')}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
         if (this.debugStack.length > 0) {
           Row() {
             TextInput({ text: this.evalText, placeholder: '求值表达式（如 name）…' })

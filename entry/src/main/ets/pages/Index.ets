@@ -6402,6 +6402,11 @@ struct Index {
                     this.evalText = value;
                   },
                   evalDebug: () => this.evalDebug(),
+                  debugLocals: this.debugLocals,
+                  evalVar: (name: string) => {
+                    this.evalText = name;
+                    this.evalDebug();
+                  },
                   gotoFrame: (file: string, line: number) => {
                     // PyCharm：点调用栈帧跳到对应源码位置
                     this.openFile(file, FileService.baseName(file));
@@ -6632,6 +6637,11 @@ if (this.settings.showBottomToolWindow) {
                     this.evalText = value;
                   },
                   evalDebug: () => this.evalDebug(),
+                  debugLocals: this.debugLocals,
+                  evalVar: (name: string) => {
+                    this.evalText = name;
+                    this.evalDebug();
+                  },
                   gotoFrame: (file: string, line: number) => {
                     // PyCharm：点调用栈帧跳到对应源码位置
                     this.openFile(file, FileService.baseName(file));
