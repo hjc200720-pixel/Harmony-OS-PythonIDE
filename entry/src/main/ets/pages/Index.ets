@@ -2229,7 +2229,22 @@ struct Index {
   private async runPyAndRead(scriptPath: string, args: string[], outPath: string): Promise<string> {
     try {
       const before: string = FileService.exists(outPath) ? FileService.readText(outPath) : '';
-      await PyRuntimeService.run(scriptPath, args);
+      const scriptLen: number = FileService.exists(scriptPath) ? FileService.readText(scriptPath).length : -1;
+      FileService.log(`runPy start scriptLen=${scriptLen} outLen=${before.length}`);
+      // 启动期的刷新会撞上「运行时尚未初始化」：等待就绪后重试（最多 ~10s）
+      let res: RunResult = await PyRuntimeService.run(scriptPath, args);
+      for (let attempt: number = 0; attempt < 20; attempt++) {
+        if (res.code !== -1 && res.stderr.indexOf('尚未初始化') < 0) {
+          break;
+        }
+        await new Promise<void>((resolve: () => void) => {
+          setTimeout(() => {
+            resolve();
+          }, 500);
+        });
+        res = await PyRuntimeService.run(scriptPath, args);
+      }
+      FileService.log(`runPy returned code=${res.code} stdoutLen=${res.stdout.length} stderr=${res.stderr.substring(0, 120).replace(/\n/g, '|')}`);
       for (let i: number = 0; i < 30; i++) {
         await new Promise<void>((resolve: () => void) => {
           setTimeout(() => {
@@ -2239,13 +2254,16 @@ struct Index {
         if (FileService.exists(outPath)) {
           const now: string = FileService.readText(outPath);
           if (now.length > 0 && now !== before) {
+            FileService.log(`runPy fresh outLen=${now.length} head=${now.substring(0, 40).replace(/\n/g, '|')}`);
             return now;
           }
         }
       }
-      return FileService.exists(outPath) ? FileService.readText(outPath) : '';
+      const stale: string = FileService.exists(outPath) ? FileService.readText(outPath) : '';
+      FileService.log(`runPy TIMEOUT/UNCHANGED outLen=${stale.length} head=${stale.substring(0, 40).replace(/\n/g, '|')}`);
+      return stale;
     } catch (e) {
-      FileService.log('runPyAndRead failed');
+      FileService.log(`runPyAndRead THREW ${e}`);
       return '';
     }
   }
