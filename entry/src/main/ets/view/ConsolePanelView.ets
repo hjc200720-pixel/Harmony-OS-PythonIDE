@@ -848,7 +848,7 @@ export struct ConsolePanelView {
               .onClick(() => {
                 this.setInspectOnlyFile(!this.inspectOnlyFile);
               })
-            ForEach(['all', '未使用导入', '重复定义', '空实现', '未使用变量'], (kind: string, index: number) => {
+            ForEach(['all', '未使用导入', '重复定义', '空实现', '未使用变量', '未定义名字'], (kind: string, index: number) => {
               Text(kind === 'all' ? '全部' : kind)
                 .fontSize(11)
                 .fontColor(this.problemKind === kind ? this.theme.textOnAccent : this.theme.textSecondary)
