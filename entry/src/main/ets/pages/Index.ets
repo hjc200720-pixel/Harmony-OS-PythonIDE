@@ -423,6 +423,8 @@ struct Index {
   @State graphShowLabels: boolean = true;
   @State graphPalette: number = 0;
   private graphCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true));
+  /** 点节点跳转用：记录每个节点的命中框 "名字|x|y|w|h" */
+  private graphBoxes: string[] = [];
 
   /** Watches（监视表达式）：表达式 + 最近一次求值结果 */
   @State watches: string[] = [];
@@ -1886,19 +1888,49 @@ struct Index {
     const gapX: number = 240 * z;
     const gapY: number = 56 * z;
     const horizontal: boolean = this.graphDir === 'h';
+    // 层次布局（Graph.TreeLayoutGroup 的层次语义）：按调用/继承深度分层，同层内顺排
+    const depth: Map<string, number> = new Map<string, number>();
+    for (const nd of nodes) {
+      depth.set(nd, 0);
+    }
+    for (let iter: number = 0; iter < n; iter++) {
+      let changed: boolean = false;
+      for (const e of this.graphEdges) {
+        const parts: string[] = e.split('>');
+        const dFrom: number | undefined = depth.get(parts[0]);
+        const dTo: number | undefined = depth.get(parts[1]);
+        if (dFrom !== undefined && dTo !== undefined && dTo <= dFrom) {
+          depth.set(parts[1], dFrom + 1);
+          changed = true;
+        }
+      }
+      if (!changed) {
+        break;
+      }
+    }
+    const layerCount: number[] = [];
     const pos: Map<string, number[]> = new Map<string, number[]>();
+    this.graphBoxes = [];
     for (let i: number = 0; i < n; i++) {
-      // 方向：v = 自上而下逐行；h = 自左而右逐列（两列布局时按方向换轴）
+      const d: number = depth.get(nodes[i]) === undefined ? 0 : (depth.get(nodes[i]) as number);
+      while (layerCount.length <= d) {
+        layerCount.push(0);
+      }
+      const idxInLayer: number = layerCount[d];
+      layerCount[d] = idxInLayer + 1;
       let col: number = 0;
       let row: number = 0;
       if (horizontal) {
-        col = twoCol ? Math.floor(i / 2) : i;
-        row = twoCol ? (i % 2) : 0;
+        col = d;
+        row = idxInLayer;
       } else {
-        col = twoCol ? (i % 2) : 0;
-        row = twoCol ? Math.floor(i / 2) : i;
+        col = idxInLayer;
+        row = d;
       }
-      pos.set(nodes[i], [20 + col * gapX, 16 + row * gapY]);
+      const px: number = 20 + col * gapX;
+      const py: number = 16 + row * gapY;
+      pos.set(nodes[i], [px, py]);
+      this.graphBoxes.push(`${nodes[i]}|${px}|${py}|${boxW}|${boxH}`);
     }
     // 先画边
     // 外观配色（Graph.AppearanceGroup，3 套）：[节点填充, 节点描边, 边色, 文字]
@@ -1962,6 +1994,32 @@ struct Index {
         ctx.fillText(nodes[i], p[0] + 10 * z, p[1] + 22 * z);
       }
     }
+  }
+
+  /** 点图表节点 → 跳到该符号的源码定义（PyCharm NeighborhoodView 的双击行为）*/
+  private onGraphClick(x: number, y: number): void {
+    for (const box of this.graphBoxes) {
+      const parts: string[] = box.split('|');
+      if (parts.length < 5) {
+        continue;
+      }
+      const bx: number = Number.parseInt(parts[1], 10);
+      const by: number = Number.parseInt(parts[2], 10);
+      const bw: number = Number.parseInt(parts[3], 10);
+      const bh: number = Number.parseInt(parts[4], 10);
+      if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) {
+        const name: string = parts[0];
+        const line: number = this.lineOfSymbol(name);
+        if (line > 0) {
+          this.editorController.revealLine(line);
+          this.setStatus(`已从图表跳转到 ${name}（第 ${line} 行）`);
+        } else {
+          this.setStatus(`${name} 是外部/基类符号，当前文件内没有定义行`);
+        }
+        return;
+      }
+    }
+    this.setStatus('未命中任何节点');
   }
 
   /** 导出图表为 PNG（Graph.DefaultGraphToolbar 的导出）：写入工程根目录，可在工程树看到 */
@@ -9707,6 +9765,9 @@ if (this.settings.showBottomToolWindow) {
       Canvas(this.graphCtx)
         .width('100%')
         .height(360)
+        .onClick((event: ClickEvent) => {
+          this.onGraphClick(event.x, event.y);
+        })
         .backgroundColor(this.theme.editorBg)
         .onReady(() => {
           this.drawGraph();
