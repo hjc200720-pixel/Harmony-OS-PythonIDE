@@ -1264,6 +1264,8 @@ struct Index {
   private openFindInFiles(seed: string): void {
     this.searchResults = [];
     this.inputValue = seed;
+    // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+    this.dialogTitle = '';
     this.dialog = 'findInFiles';
   }
 
@@ -1382,6 +1384,8 @@ struct Index {
       this.gotoItems.push('（没有可跳转的目标）');
       this.gotoPaths.push('|0');
     }
+    // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+    this.dialogTitle = '';
     this.dialog = 'goto';
   }
 
@@ -3503,6 +3507,8 @@ struct Index {
     }
     if (id === 'tree.delete') {
       this.dialogTarget = path;
+      // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+      this.dialogTitle = '';
       this.dialog = 'delete';
       return;
     }
@@ -4084,6 +4090,8 @@ struct Index {
     if (this.structureSymbols.length === 0) {
       this.structureSymbols.push('（当前文件没有可识别的定义，或还没有打开文件）');
     }
+    // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+    this.dialogTitle = '';
     this.dialog = 'fileStructure';
   }
 
@@ -5634,10 +5642,14 @@ struct Index {
     if (action === 'run.config') {
       // 真实实现：读取/编辑运行配置并落盘（原来这里只是一句占位提示）
       this.loadRunConfig();
+      // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+      this.dialogTitle = '';
       this.dialog = 'runConfig';
       return;
     }
     if (action === 'run.pip') {
+      // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+      this.dialogTitle = '';
       this.dialog = 'pip';
       this.inputValue = '';
       return;
@@ -5709,6 +5721,8 @@ struct Index {
       return;
     }
     if (action === 'file.projectStructure') {
+      // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+      this.dialogTitle = '';
       this.dialog = 'structure';
       return;
     }
@@ -5840,6 +5854,8 @@ struct Index {
       return;
     }
     if (action === 'view.recentFiles') {
+      // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+      this.dialogTitle = '';
       this.dialog = 'recentFiles';
       return;
     }
@@ -5901,6 +5917,8 @@ struct Index {
       return;
     }
     if (action === 'run.runtime') {
+      // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+      this.dialogTitle = '';
       this.dialog = 'runtime';
       return;
     }
@@ -5915,14 +5933,20 @@ struct Index {
     }
     // ── 帮助菜单 ────────────────────────────────────────────────────
     if (action === 'help.shortcuts') {
+      // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+      this.dialogTitle = '';
       this.dialog = 'shortcuts';
       return;
     }
     if (action === 'help.licenses') {
+      // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+      this.dialogTitle = '';
       this.dialog = 'licenses';
       return;
     }
     if (action === 'help.runtime') {
+      // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+      this.dialogTitle = '';
       this.dialog = 'runtime';
       return;
     }
@@ -6589,14 +6613,20 @@ struct Index {
       return;
     }
     if (action === 'tools.settings') {
+      // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+      this.dialogTitle = '';
       this.dialog = 'settings';
       return;
     }
     if (action === 'help.about') {
+      // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+      this.dialogTitle = '';
       this.dialog = 'about';
       return;
     }
     if (action === 'help.docs') {
+      // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+      this.dialogTitle = '';
       this.dialog = 'docs';
       return;
     }
@@ -6881,6 +6911,8 @@ struct Index {
       this.appendError(`读取项目列表失败：${JSON.stringify(err)}`);
     }
     this.projectList = names;
+    // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+    this.dialogTitle = '';
     this.dialog = 'projectList';
   }
 
@@ -7200,6 +7232,8 @@ struct Index {
                 },
                 deletePath: (path: string) => {
                   this.dialogTarget = path;
+                  // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+                  this.dialogTitle = '';
                   this.dialog = 'delete';
                 },
                 // PyCharm ProjectViewPopupMenu：复制路径(_O) / 运行 / 未实现项的说明
@@ -8163,10 +8197,14 @@ if (this.settings.showBottomToolWindow) {
               this.handleAction('view.recentFiles');
             } else if (item === 'status.interpreter' || item === 'status.abi') {
               // 解释器/ABI：打开运行时状态对话框（含错误全文与「重新初始化」）
+              // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+              this.dialogTitle = '';
               this.dialog = 'runtime';
             } else if (item === 'status.cursor') {
               this.openInputDialog('转到行', `${this.cursorLine}`, 'goto');
             } else if (item === 'status.indent') {
+              // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+              this.dialogTitle = '';
               this.dialog = 'settings';
             } else if (item === 'status.encoding') {
               this.showToast('UTF-8（本 IDE 统一以 UTF-8 读写文件）');
@@ -8771,7 +8809,8 @@ if (this.settings.showBottomToolWindow) {
     if (kind === 'bookmarks') {
       // PyCharm: <toolWindow id="Bookmarks" anchor="left"/> —— 本 IDE 内为占位面板
       this.twPanelId = 'Bookmarks';
-      this.rightToolWindow = 'Bookmarks';
+      // 再点一次关闭（与其它工具窗一致）
+      this.rightToolWindow = this.rightToolWindow === 'Bookmarks' ? '' : 'Bookmarks';
       return;
     }
     if (kind === 'more') {
@@ -8849,6 +8888,7 @@ if (this.settings.showBottomToolWindow) {
       return;
     }
     if (kind === 'notifications') {
+      this.dialogTitle = '通知';
       this.dialog = 'notifications';
       return;
     }
@@ -10149,6 +10189,8 @@ if (this.settings.showBottomToolWindow) {
       return;
     }
     if (w.id === 'Notifications') {
+      // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
+      this.dialogTitle = '';
       this.dialog = 'notifications';
       return;
     }
