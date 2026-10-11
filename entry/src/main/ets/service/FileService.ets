@@ -470,6 +470,20 @@ export class FileService {
         ''
       ].join('\n'));
     }
+    const undefPy: string = `${root}/demo_pkg/undef.py`;
+    if (!FileService.exists(undefPy)) {
+      FileService.writeText(undefPy, [
+        '"""留作演示「未定义名字」检查：定义的是 total，返回时误写成 totl。"""',
+        '',
+        '',
+        'def add_all(values: list) -> int:',
+        '    total = 0',
+        '    for v in values:',
+        '        total = total + v',
+        '    return totl',
+        ''
+      ].join('\n'));
+    }
     const scratchPy: string = `${root}/demo_pkg/scratch.py`;
     if (!FileService.exists(scratchPy)) {
       FileService.writeText(scratchPy, [
