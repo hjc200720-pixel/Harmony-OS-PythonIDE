@@ -68,3 +68,15 @@ certpath/profile/storeFile: C:\Users\HUAWEI\.ohos\config\default_HarmonyPyIDE_*.
 2. **再换发布签名**（3.2）→ 出 release 包。
 3. **补隐私政策 / 备案 / 截图**（第四节）→ 提交审核。
 4. 登录成功后可继续做「云端能力」：账号绑定、设置同步、云端项目（需要你自己的服务端）。
+## 六、真机验证记录（2026-10-11 补充）
+
+| 项 | 结果 |
+|---|---|
+| 顶栏账号按钮 | 新增 `tb-account`（`ToolBarView.ets`，`.id('tb-'+key)`），真机 `dumpLayout` 命中 ✓ |
+| 账号对话框 | 点击后显示「华为账号 / 未登录 / 华为账号登录」✓ |
+| **真实调用链** | 点登录后系统返回 **`1001502003`**，状态栏显示「华为账号登录失败：1001502003」✓ —— 证明已进入系统账号服务 |
+| 参数修正尝试 | `state` 原为自定义字符串 → 改为 `util.generateRandomUUID(true)` 的 UUID 后**仍为 1001502003** ⇒ 参数不是唯一原因 |
+| 权限核实 | `@hms.core.authentication.d.ts` 中**无 `@permission`**；`module.json5` 未申请权限 ⇒ 不是权限问题 |
+| 结论 | 剩余的 `1001502003/1001502002` 与本应用**尚未在 AGC 创建/开通华为账号服务（含签名指纹登记）**一致；完成第三节 3.1 后即可复测成功路径 |
+
+截图：`_cache/device/acct.jpeg`、`_cache/device/acct2.jpeg`

@@ -14,6 +14,7 @@
 import { authentication } from '@kit.AccountKit';
 import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { util } from '@kit.ArkTS';
 import { FileService } from './FileService';
 
 /** 登录后保存的账号信息（unionID/openID 是华为账号的稳定标识） */
@@ -44,7 +45,7 @@ function explain(code: number): string {
     return '应用未授权：需要在 AppGallery Connect 里开通「华为账号」服务，并登记本应用的签名证书指纹。';
   }
   if (code === 1001502003) {
-    return '参数不合法（state/scopes 等）。';
+    return '请求被账号服务判为不合法：最常见原因是本应用尚未在 AppGallery Connect 创建/开通「华为账号」服务（含包名与签名指纹登记），其次是请求参数。';
   }
   if (code === 1001502012) {
     return '用户取消了登录。';
@@ -89,7 +90,8 @@ export class AccountService {
         const provider: authentication.HuaweiIDProvider = new authentication.HuaweiIDProvider();
         const request: authentication.LoginWithHuaweiIDRequest = provider.createLoginWithHuaweiIDRequest();
         request.forceLogin = true;
-        request.state = `harmonyide-${Date.now()}`;
+        // Account Kit 要求 state 是 UUID（用于防 CSRF 校验）；自定义字符串会返回 1001502003 参数不合法
+        request.state = util.generateRandomUUID(true);
         const controller: authentication.AuthenticationController =
           new authentication.AuthenticationController(context);
         controller.executeRequest(request)

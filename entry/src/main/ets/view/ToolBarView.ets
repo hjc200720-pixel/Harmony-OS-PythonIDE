@@ -69,6 +69,8 @@ const BTN_REDO: string = 'redo';
 const BTN_SETTINGS: string = 'settings';
 const BTN_AI: string = 'ai';            // MainToolbarRight: AIAssistantHubPopupAction
 const BTN_SEARCH: string = 'searchEverywhere';  // MainToolbarRight: SearchEverywhere
+// MainToolbarRight: 试用/账号微件所在位置（PyCharm New UI 的账号入口）
+const BTN_ACCOUNT: string = 'account';  // MainToolbarRight: SearchEverywhere
 const BTN_MORE: string = 'moreRun';             // RunToolbarMainActionGroup: MoreRunToolbarActions
 
 // ── 显式类型的布局常量 ──────────────────────────────────────
@@ -226,6 +228,9 @@ export struct ToolBarView {
     if (key === BTN_SEARCH) {
       return '随处搜索';
     }
+    if (key === BTN_ACCOUNT) {
+      return '华为账号';
+    }
     return '设置';
   }
 
@@ -256,6 +261,8 @@ export struct ToolBarView {
         IconMoreVertical({ iconSize: 16, color: this.iconColorOf(key) })
       } else if (key === BTN_SEARCH) {
         IconSearch({ iconSize: 16, color: this.iconColorOf(key) })
+      } else if (key === BTN_ACCOUNT) {
+        IconAsset({ iconSize: 16, file: 'icons/tbAccount20.svg' })
       } else {
         IconSettings({ iconSize: 16, color: this.iconColorOf(key) })
       }
@@ -454,6 +461,8 @@ export struct ToolBarView {
         // MainToolbarRight: SearchEverywhere（随处搜索）
         this.toolButton(BTN_SEARCH, 'edit.searchEverywhere')
         this.toolButton(BTN_SETTINGS, 'tools.settings')
+        // PyCharm New UI：设置之后是「试用/账号」微件 → 这里放华为账号入口
+        this.toolButton(BTN_ACCOUNT, 'help.account')
       }
       .width('100%')
       .height(TOOLBAR_HEIGHT)

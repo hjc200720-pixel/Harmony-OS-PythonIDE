@@ -6008,6 +6008,21 @@ struct Index {
       this.dialog = 'shortcuts';
       return;
     }
+    if (action === 'help.privacy') {
+      this.dialogTitle = '隐私政策';
+      this.dialog = 'privacy';
+      return;
+    }
+    if (action === 'help.terms') {
+      this.dialogTitle = '用户协议';
+      this.dialog = 'terms';
+      return;
+    }
+    if (action === 'help.sdk') {
+      this.dialogTitle = '第三方 SDK 与数据说明';
+      this.dialog = 'sdkDisclosure';
+      return;
+    }
     if (action === 'help.licenses') {
       // 该弹层自带标题：清空外框标题，避免延续上一个对话框的标题
       this.dialogTitle = '';
@@ -9739,6 +9754,12 @@ if (this.settings.showBottomToolWindow) {
             this.RunConfigContent()
           } else if (this.dialog === 'shortcuts') {
             this.ShortcutsContent()
+          } else if (this.dialog === 'privacy') {
+            this.LegalContent('隐私政策', this.PRIVACY_TEXT())
+          } else if (this.dialog === 'terms') {
+            this.LegalContent('用户协议', this.TERMS_TEXT())
+          } else if (this.dialog === 'sdkDisclosure') {
+            this.LegalContent('第三方 SDK 与数据说明', this.SDK_TEXT())
           } else if (this.dialog === 'licenses') {
             this.LicensesContent()
           } else if (this.dialog === 'goto') {
@@ -10781,6 +10802,109 @@ if (this.settings.showBottomToolWindow) {
     }
     .width('100%')
     .height(300)
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 隐私政策正文（上架必需；请把「联系方式」换成你的真实邮箱后再提交） */
+  private PRIVACY_TEXT(): string[] {
+    return [
+      '生效日期：2026-10-11',
+      '',
+      '一、我们收集哪些信息',
+      '1. 本应用默认不收集任何个人信息，也不联网上传任何数据。',
+      '2. 只有当你主动点击「华为账号登录」时，才会通过系统「华为账号」服务获取以下信息：',
+      '   · unionID / openID（华为账号对你在本应用中的稳定标识，不含手机号与真实姓名）',
+      '   · idToken / authorizationCode（用于身份校验的临时凭证）',
+      '3. 上述信息仅保存在本机应用私有目录（account.json），不会上传到任何服务器——本应用没有自建服务端。',
+      '4. 应用不读取通讯录、位置、相册、麦克风、相机等任何系统数据。',
+      '',
+      '二、我们如何使用信息',
+      '仅用于在应用内显示登录状态、区分本机用户。点击「退出登录」会立即清除本机保存的账号标识。',
+      '',
+      '三、权限说明',
+      '本应用未申请任何敏感系统权限。你的项目文件存放在应用自身沙箱目录内，卸载应用即一并删除。',
+      'Python 代码全部在本机沙箱内运行，不会访问网络（离线 pip 安装使用本地 wheel）。',
+      '',
+      '四、第三方服务',
+      '本应用仅使用系统内置的华为账号服务（Account Kit）用于登录，未集成任何广告、统计或数据变现 SDK。',
+      '',
+      '五、你的权利',
+      '你可以随时在应用内退出登录以删除本机账号标识，或直接卸载应用删除全部本地数据。',
+      '',
+      '六、联系方式',
+      '邮箱：<请替换为你自己的联系邮箱>   ← 上架前必须替换',
+    ];
+  }
+
+  /** 用户协议正文（模板，上架前建议由法务复核） */
+  private TERMS_TEXT(): string[] {
+    return [
+      '一、服务内容',
+      '本应用是一款运行在鸿蒙设备上的 Python 集成开发环境，提供代码编辑、运行、调试、静态检查等功能。',
+      '',
+      '二、你的责任',
+      '你应对自己编写、运行、保存的代码与文件负责，不得使用本应用从事违反法律法规的活动。',
+      '',
+      '三、免责声明',
+      '本应用按「现状」提供。对于因使用本应用导致的代码丢失、设备异常等，开发者不承担赔偿责任；',
+      '建议你自行备份重要文件。',
+      '',
+      '四、知识产权',
+      '应用界面与实现归开发者所有；界面设计参考了 JetBrains PyCharm 的公开视觉规范，未使用其受版权保护的素材。',
+      '',
+      '五、协议变更',
+      '协议如有更新会在应用内展示，继续使用即视为接受更新后的条款。',
+    ];
+  }
+
+  /** 第三方 SDK 与数据处理说明（应用市场通常要求） */
+  private SDK_TEXT(): string[] {
+    return [
+      '本应用使用的第三方能力：',
+      '',
+      '1. 华为账号服务（Account Kit，系统内置）',
+      '   · 用途：用户登录',
+      '   · 收集的信息：unionID / openID / idToken / authorizationCode',
+      '   · 使用场景：仅在你点击「华为账号登录」时',
+      '   · 数据去向：仅保存在本机应用私有目录，不上传',
+      '   · 隐私政策：见华为开发者联盟《华为账号服务隐私声明》',
+      '',
+      '2. 内嵌 CPython 3.12.10（随应用打包）',
+      '   · 用途：在你本机沙箱内执行 Python 代码',
+      '   · 收集的信息：无',
+      '',
+      '3. 其他',
+      '   本应用未集成广告、统计、崩溃上报、社交分享类 SDK。',
+    ];
+  }
+
+  /** 通用长文本对话框（隐私政策/用户协议/SDK 说明共用） */
+  @Builder
+  LegalContent(title: string, lines: string[]) {
+    Column() {
+      Text(title)
+        .fontSize(14)
+        .fontFamily(PyFont.ui)
+        .fontColor(this.theme.textPrimary)
+        .margin({ bottom: 8 })
+      Scroll() {
+        Column() {
+          ForEach(lines, (line: string) => {
+            Text(line.length === 0 ? ' ' : line)
+              .fontSize(12)
+              .fontFamily(PyFont.ui)
+              .fontColor(line.indexOf('←') >= 0 ? this.theme.warning : this.theme.textSecondary)
+              .width('100%')
+              .margin({ bottom: 2 })
+          }, (line: string, idx: number) => `lg_${idx}_${line.length}`)
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+      }
+      .width('100%')
+      .height(360)
+    }
+    .width('100%')
     .alignItems(HorizontalAlign.Start)
   }
 
