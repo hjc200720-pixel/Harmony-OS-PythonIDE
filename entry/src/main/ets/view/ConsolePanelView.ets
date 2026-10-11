@@ -139,6 +139,11 @@ export struct ConsolePanelView {
   @State hoverIcon: string = '';
 
   selectTab: (tab: string) => void = () => {};
+  /** 调试动作（XDebugger：Resume / Step Over / Step Into / Step Out）*/
+  resumeDebug: () => void = () => {};
+  stepDebug: () => void = () => {};
+  stepIntoDebug: () => void = () => {};
+  stepOutDebug: () => void = () => {};
   clear: () => void = () => {};
   copyAll: () => void = () => {};
   /** PyCharm ConsoleView.PopupMenu：控制台右键菜单（交给 Index 弹出） */
@@ -537,6 +542,42 @@ export struct ConsolePanelView {
       // ── 内容区 ──────────────────────────────────────
       if (this.activeTab === TAB_DEBUG) {
       Column() {
+        Row() {
+          Text('继续')
+            .fontSize(12)
+            .fontColor(this.theme.textPrimary)
+            .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+            .margin({ right: 6 })
+            .borderRadius(4)
+            .backgroundColor(this.theme.buttonBg)
+            .onClick(() => this.resumeDebug())
+          Text('单步')
+            .fontSize(12)
+            .fontColor(this.theme.textOnAccent)
+            .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+            .margin({ right: 6 })
+            .borderRadius(4)
+            .backgroundColor(this.theme.buttonPrimaryBg)
+            .onClick(() => this.stepDebug())
+          Text('步入')
+            .fontSize(12)
+            .fontColor(this.theme.textPrimary)
+            .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+            .margin({ right: 6 })
+            .borderRadius(4)
+            .backgroundColor(this.theme.buttonBg)
+            .onClick(() => this.stepIntoDebug())
+          Text('步出')
+            .fontSize(12)
+            .fontColor(this.theme.textPrimary)
+            .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+            .margin({ right: 6 })
+            .borderRadius(4)
+            .backgroundColor(this.theme.buttonBg)
+            .onClick(() => this.stepOutDebug())
+        }
+        .width('100%')
+        .padding({ left: 8, top: 4, bottom: 4 })
         if (this.debugLines.length === 0) {
           Text('未在调试中（在行号左侧点一下加断点，再点工具栏的调试按钮）')
             .fontSize(12)
