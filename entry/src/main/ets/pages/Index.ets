@@ -1626,6 +1626,20 @@ struct Index {
         }
       }
       FileService.log(`selfcheck diff rows=${dr.length} removed=${rem} added=${add}`);
+      // 本地历史统计（每个文件保留上限 20）
+      try {
+        const hdir: string = this.historyDirFor(this.editorFilePath);
+        const nodes: FileNode[] = FileService.exists(hdir) ? FileService.listDir(hdir, 1) : [];
+        let cnt: number = 0;
+        for (const n of nodes) {
+          if (!n.isDir && n.name.startsWith('snap_')) {
+            cnt++;
+          }
+        }
+        FileService.log(`selfcheck history snapshots=${cnt} retainMax=20 dir=${hdir}`);
+      } catch (e) {
+        FileService.log('selfcheck history unavailable');
+      }
     } catch (e) {
       FileService.log(`selfcheck failed ${JSON.stringify(e)}`);
     }
@@ -1706,6 +1720,22 @@ struct Index {
       }
       FileService.writeText(`${dir}/snap_${Date.now()}.txt`, old);
       FileService.log(`local history snapshot ${path}`);
+      // 保留策略：每个文件最多 20 个快照，超出则删最旧的（避免无限增长）
+      const all: FileNode[] = FileService.listDir(dir, 1);
+      const snaps: FileNode[] = [];
+      for (const n of all) {
+        if (!n.isDir && n.name.startsWith('snap_')) {
+          snaps.push(n);
+        }
+      }
+      if (snaps.length > 20) {
+        snaps.sort((x: FileNode, y: FileNode) => x.name < y.name ? -1 : 1);
+        const drop: number = snaps.length - 20;
+        for (let i: number = 0; i < drop; i++) {
+          FileService.remove(`${dir}/${snaps[i].name}`);
+        }
+        FileService.log(`local history pruned ${drop}`);
+      }
     } catch (e) {
       FileService.log(`snapshot failed ${JSON.stringify(e)}`);
     }
