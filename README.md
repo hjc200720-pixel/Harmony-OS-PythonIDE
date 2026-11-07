@@ -24,7 +24,8 @@ ArkTS 编译错误        0（仅 WARN）
 HAP 链接              无未定义符号
 BUILD                 SUCCESSFUL
 
-entry-default-unsigned.hap                 26.90 MB / 22 个条目
+entry-default-signed.hap                   29.35 MiB（调试证书签名，可装设备）
+entry-default-unsigned.hap                 29.08 MiB / 123 个条目（本轮构建实测）
 ├─ libs/arm64-v8a/libpythonbridge.so        9.18 MiB（HAP 内，已 strip）  ← 内嵌 CPython
 │  └─ 未链接运行时时仅 244 KB；链接后 31.28 MB（未 strip）
 ├─ libs/x86_64/libpythonbridge.so           9.38 MiB（HAP 内，已 strip）  ← 内嵌 CPython，模拟器
@@ -43,11 +44,11 @@ entry-default-unsigned.hap                 26.90 MB / 22 个条目
 内建模块 `PyInit__io` / `PyInit__json` / `PyInit_math` / `PyInit_zlib` / `PyInit__socket` /
 `PyInit__decimal` / `PyInit_posix` 等已就位。
 
-复核方式（本次交付实际执行的、单写者、干净重建）：
-`powershell -File scriptsuild-cpython-ohos.ps1 -Abi both` → `powershell -File scriptsuild-hap.ps1 -Clean` → `python scriptserify-hap.py <hap> --expect-runtime`（已 PASS）。
+复核方式（本次交付实际执行的、单写者、干净重建；本轮构建另跑 `verify-hap.py`：123 个条目 / 29.06 MiB，PASS）：
+`powershell -File scriptsuild-cpython-ohos.ps1 -Abi both` → `powershell -File scriptsuild-hap.ps1 -Clean` → `python scripts\verify-hap.py <hap> --expect-runtime`（已 PASS）。
 
 
-**运行时契约校验**（本机没有签名材料、无法上机，这是最接近实机的替代验证）：
+**运行时契约校验**（宿主侧等价验证，用于不上机时先卡住打包/导入契约；真机结论见第六节）：
 
 ```powershell
 python scripts\verify-runtime-contract.py `
