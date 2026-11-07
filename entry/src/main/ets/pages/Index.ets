@@ -30,6 +30,8 @@ import { ConsolePanelView } from '../view/ConsolePanelView';
 import { StatusBarView } from '../view/StatusBarView';
 import { languages, languageLabel, languageOf, LangDef } from '../service/LanguageService';
 import { TerminalService, DirWatcher } from '../service/TerminalService';
+import { CoverageFileEntry, CoverageReport, COVERAGE_PY_SCRIPT, parseCoverageReport } from '../service/CoverageService';
+import { EndpointEntry, ENDPOINTS_PY_SCRIPT, parseEndpointRows } from '../service/EndpointService';
 import { WelcomeView } from '../view/WelcomeView';
 import { IconChevronRight, IconClose, IconFolder, IconPython, IconSettings, IconTerminal, IconAsset, IconMoreVertical } from '../view/IdeIcons';
 
@@ -153,8 +155,8 @@ function toolWindows(): ToolWindowInfo[] {
     new ToolWindowInfo('Plots', '绘图', 'right', true),
     new ToolWindowInfo('Python Packages', 'Python 软件包', 'right', true),
     new ToolWindowInfo('Python Console', 'Python 控制台', 'right', true),
-    new ToolWindowInfo('Coverage', '覆盖率', 'right', false),
-    new ToolWindowInfo('Endpoints', '端点', 'right', false),
+    new ToolWindowInfo('Coverage', '覆盖率', 'right', true),
+    new ToolWindowInfo('Endpoints', '端点', 'right', true),
     new ToolWindowInfo('SciView', '数据视图', 'right', false),
     new ToolWindowInfo('Jupyter Variables', 'Jupyter 变量', 'right', false),
     new ToolWindowInfo('HfCacheToolWindow', 'Hugging Face', 'right', false),
@@ -653,7 +655,7 @@ struct Index {
   /** 右侧工具窗面板宽度（可拖拽，持久化） */
   @StorageLink('rightPanelWidth') rightPanelW: number = 320;
   /** 当前打开的右侧工具窗 id（空 = 关闭）。PyCharm 右侧工具窗是内嵌面板 */
-  @State rightToolWindow: string = '';
+  @State @Watch('onRightToolWindowChanged') rightToolWindow: string = '';
   /** 根容器实际高度（vp）：右竖条/分屏窗格定位用 */
   @State windowHeight: number = 0;
 
@@ -729,6 +731,20 @@ struct Index {
 
   /** 当前文件的问题行（gutter 警示标）*/
   @State warnLines: number[] = [];
+
+  // ── 覆盖率（Run with Coverage）────────────────────────────────────────────
+  /** 最近一次覆盖率运行的结果（工具窗与 gutter 都读它）*/
+  @State coverageReport: CoverageReport = new CoverageReport();
+  /** 覆盖率统计进行中（防重入）*/
+  @State coverageRunning: boolean = false;
+  /** 当前编辑器文件的覆盖率命中行 / 未命中行（gutter 竖条）*/
+  @State coverHitLines: number[] = [];
+  @State coverMissLines: number[] = [];
+
+  // ── 端点（Endpoints）─────────────────────────────────────────────────────
+  /** 静态扫描出的 Web 路由 */
+  @State endpointRows: EndpointEntry[] = [];
+  @State endpointScanning: boolean = false;
 
   /** 问题工具窗的行 */
   @State problemRows: string[] = [];
@@ -889,6 +905,11 @@ struct Index {
   @State editorMenuShown: boolean = false;
   /** 工具窗标题右键菜单（ToolWindowContextMenu） */
   @State twMenuShown: boolean = false;
+  /** 右侧面板内容的 ForEach key（单元素：id 一变，内容子树强制重建）*/
+  private rightPanelIds(): string[] {
+    return [this.rightToolWindow.length > 0 ? this.rightToolWindow : this.twPanelId];
+  }
+
   /** 当前展示的占位工具窗 id（书签/覆盖率/端点/数据视图/Jupyter 变量） */
   @State twPanelId: string = 'Bookmarks';
   /** 运行时设备形态：tablet / 2in1 / phone（用于自适应与「关于」信息） */
@@ -2835,6 +2856,173 @@ struct Index {
     }
   }
 
+  // ── 覆盖率：PyCharm 的 Run with Coverage（真功能，靠 sys.settrace 统计行命中）──
+
+  /** 当前编辑器文件相对工程根的路径；不在工程内返回空串 */
+  private editorRelPath(): string {
+    const cur: string = this.editorFilePath;
+    const root: string = this.projectRoot;
+    if (root.length === 0 || cur.length === 0 || cur.indexOf(root) !== 0) {
+      return '';
+    }
+    return cur.substring(root.length + 1);
+  }
+
+  /** 把覆盖率报告里「当前文件」的行号交给编辑器（gutter 绿色=命中 / 红色=未命中）*/
+  private applyCoverageToEditor(): void {
+    const rel: string = this.editorRelPath();
+    let hit: number[] = [];
+    let miss: number[] = [];
+    if (rel.length > 0) {
+      for (const f of this.coverageReport.files) {
+        if (f.rel === rel) {
+          hit = f.hit;
+          miss = f.missing;
+        }
+      }
+    }
+    this.coverHitLines = hit;
+    this.coverMissLines = miss;
+  }
+
+  /** 运行当前文件并统计行覆盖率（PyCharm：Run 'x' with Coverage）*/
+  private async runCoverage(): Promise<void> {
+    if (this.coverageRunning) {
+      return;
+    }
+    if (!PyRuntimeService.isReady()) {
+      this.showToast('Python 运行时尚未就绪，暂时无法统计覆盖率');
+      return;
+    }
+    const rel: string = this.editorRelPath();
+    if (rel.length === 0 || !rel.endsWith('.py')) {
+      this.showToast('请先在编辑器里打开工程内的 .py 文件');
+      return;
+    }
+    const dir: string = `${FileService.context().filesDir}/.harmonyide`;
+    FileService.ensureDir(dir);
+    const script: string = `${dir}/coverage_run.py`;
+    const out: string = `${dir}/coverage.json`;
+    FileService.writeText(script, COVERAGE_PY_SCRIPT);
+    this.coverageRunning = true;
+    this.twPanelId = 'Coverage';
+    this.rightToolWindow = 'Coverage';
+    this.setStatus(`正在统计覆盖率：${rel}…`);
+    FileService.log(`覆盖开始 target=${rel} script=${script}`);
+    try {
+      const txt: string = await this.runPyAndRead(script, [this.projectRoot, out, rel], out);
+      const report: CoverageReport = parseCoverageReport(txt);
+      // 面板可读性：先列「本次运行真正覆盖到的文件」（覆盖率高的在前），
+      // 再列工程里存在但完全没被执行到的文件（这些 0% 有意义，但不应挤掉主要结论）。
+      const measured: CoverageFileEntry[] = [];
+      const untouched: CoverageFileEntry[] = [];
+      for (const f of report.files) {
+        if (f.covered > 0) {
+          measured.push(f);
+        } else {
+          untouched.push(f);
+        }
+      }
+      measured.sort((a: CoverageFileEntry, b: CoverageFileEntry) => b.percent - a.percent);
+      untouched.sort((a: CoverageFileEntry, b: CoverageFileEntry) => a.rel < b.rel ? -1 : (a.rel > b.rel ? 1 : 0));
+      report.files = measured.concat(untouched);
+      this.coverageReport = report;
+      this.applyCoverageToEditor();
+      FileService.log(`覆盖结束 ok=${this.coverageReport.ok} files=${this.coverageReport.files.length}`);
+      this.setStatus(this.coverageReport.ok
+        ? `覆盖率统计完成：${this.coverageReport.files.length} 个文件（点列表可跳到未命中行）`
+        : `覆盖率运行失败：${this.coverageReport.message}`);
+    } catch (err) {
+      this.coverageReport = new CoverageReport();
+      this.setStatus(`覆盖率失败：${JSON.stringify(err)}`);
+    } finally {
+      this.coverageRunning = false;
+    }
+  }
+
+  /** 工程总覆盖率（所有被统计文件的行命中率之和，PyCharm 覆盖率视图顶部的总量口径）*/
+  private coverageTotalLine(): string {
+    let total: number = 0;
+    let covered: number = 0;
+    for (const f of this.coverageReport.files) {
+      total += f.total;
+      covered += f.covered;
+    }
+    if (total === 0) {
+      return '';
+    }
+    const percent: number = Math.round(covered * 1000 / total) / 10;
+    return `工程总覆盖率 ${percent.toFixed(1)}%（${covered}/${total} 行）`;
+  }
+
+  /** 隐藏覆盖率（PyCharm 的 Hide Coverage）：清数据 + 清 gutter 标记 */
+  private hideCoverage(): void {
+    this.coverageReport = new CoverageReport();
+    this.coverHitLines = [];
+    this.coverMissLines = [];
+    this.setStatus('已隐藏覆盖率数据');
+  }
+
+  /** 点覆盖率报告里的文件 → 打开它并定位到第一个未命中行（没有就第 1 行） */
+  private openCoverageFile(f: CoverageFileEntry): void {
+    const abs: string = `${this.projectRoot}/${f.rel}`;
+    const line: number = f.missing.length > 0 ? f.missing[0] : 1;
+    this.openLocationEntry(`${abs}#${line}`);
+    this.applyCoverageToEditor();
+  }
+
+  // ── 端点：静态扫描工程里的 Web 路由（设备内没有 Flask/Django，只能静态分析）──
+
+  /** 扫描 Flask/FastAPI/Django 风格的路由定义，结果填进「端点」工具窗 */
+  private async scanEndpoints(): Promise<void> {
+    if (this.endpointScanning) {
+      return;
+    }
+    if (!PyRuntimeService.isReady()) {
+      this.showToast('Python 运行时尚未就绪，暂时无法扫描端点');
+      return;
+    }
+    const dir: string = `${FileService.context().filesDir}/.harmonyide`;
+    FileService.ensureDir(dir);
+    const script: string = `${dir}/endpoints_scan.py`;
+    const out: string = `${dir}/endpoints.txt`;
+    FileService.writeText(script, ENDPOINTS_PY_SCRIPT);
+    // 先写一个哨兵内容：runPyAndRead 以「输出文件内容发生变化」判断完成，
+    // 而零端点时脚本会写空文件（内容仍是""），不先占位就要白等 6 秒轮询。
+    FileService.writeText(out, '# scan-pending');
+    this.endpointScanning = true;
+    this.twPanelId = 'Endpoints';
+    this.rightToolWindow = 'Endpoints';
+    this.setStatus('正在扫描 Web 路由端点…');
+    try {
+      const txt: string = await this.runPyAndRead(script, [this.projectRoot, out], out);
+      this.endpointRows = parseEndpointRows(txt);
+      FileService.log(`端点扫描完成 count=${this.endpointRows.length}`);
+      this.setStatus(this.endpointRows.length > 0
+        ? `端点：${this.endpointRows.length} 个（静态扫描）`
+        : '端点：未检测到 Web 路由（静态扫描 Flask/FastAPI/Django）');
+    } catch (err) {
+      this.setStatus(`端点扫描失败：${JSON.stringify(err)}`);
+    } finally {
+      this.endpointScanning = false;
+    }
+  }
+
+  /** 点端点条目 → 跳到定义它的行 */
+  private openEndpoint(e: EndpointEntry): void {
+    this.openLocationEntry(`${this.projectRoot}/${e.file}#${e.line}`);
+  }
+
+  /**
+   * 右侧面板切到「端点」时自动扫一次（PyCharm 的 Endpoints 工具窗打开即扫描）。
+   * 只在还没有结果时自动扫，避免每次切面板都重扫覆盖用户刚看的结果。
+   */
+  private onRightToolWindowChanged(): void {
+    if (this.rightToolWindow === 'Endpoints' && this.endpointRows.length === 0 && !this.endpointScanning) {
+      this.scanEndpoints();
+    }
+  }
+
   /** 作用域视图（ScopeView）：把当前文件交给运行时用 ast 真解析，结果写文件后读回 */
   private async openScopeView(): Promise<void> {
     const file: string = this.editorFilePath;
@@ -4706,6 +4894,8 @@ struct Index {
     this.pendingBreakpoints = tab.breakpoints.slice();
     this.cursorLine = tab.cursorLine;
     this.cursorColumn = tab.cursorColumn;
+    // 切换文件时刷新覆盖率 gutter 标记（覆盖率只标「统计过的那次运行」涉及的文件）
+    this.applyCoverageToEditor();
     this.setStatus(`已打开 ${tab.name}`);
   }
 
@@ -5582,6 +5772,12 @@ struct Index {
     if (action === 'run.run') {
       this.notify('开始运行当前文件');
       this.runActiveFile(false);
+      return;
+    }
+    if (action === 'run.coverage') {
+      // PyCharm: Run | Run 'x' with Coverage
+      this.notify('开始统计覆盖率');
+      this.runCoverage();
       return;
     }
     // 编辑菜单里的剪贴板三项（之前是断头：菜单点了没反应）
@@ -7626,6 +7822,8 @@ struct Index {
                   breakpoints: this.pendingBreakpoints,
     bookmarkLines: this.activeBookmarkLines(),
                   warnLines: this.warnLines,
+                  coverHitLines: this.coverHitLines,
+                  coverMissLines: this.coverMissLines,
                   debugLine: this.debugLine,
                   controller: this.editorController,
                   // 编辑器内右键 → EditorPopupMenu
@@ -7738,6 +7936,8 @@ struct Index {
                       breakpoints: this.pendingBreakpoints,
     bookmarkLines: this.activeBookmarkLines(),
                   warnLines: this.warnLines,
+                  coverHitLines: this.coverHitLines,
+                  coverMissLines: this.coverMissLines,
                       debugLine: 0,
                       // 只读镜像（用户预期：右侧窗格只能看不能改）——共享编辑待有可靠验证手段后再开，见 docs/FEATURE_AUDIT.md 0.34
                       readOnly: true
@@ -8044,8 +8244,13 @@ struct Index {
               .padding({ left: 10, right: 6 })
               .alignItems(VerticalAlign.Center)
 
-              // 内容（复用工具窗占位内容构建器）
-              this.ToolWindowPanelContent(this.rightToolWindow.length > 0 ? this.rightToolWindow : this.twPanelId)
+              // 内容（复用工具窗内容构建器）
+              // ⚠️ ArkUI 的 @Builder **按值传参不会自动刷新**：从「覆盖率」切到「端点」时两者都非空，
+              // 外层 if 分支没变 → 旧内容被复用，真机上出现过「标题=端点、内容=覆盖率」。
+              // 用 ForEach 以面板 id 作 key：id 一变就销毁旧子树、按新 id 重建，标题与内容始终同源。
+              ForEach(this.rightPanelIds(), (pid: string) => {
+                this.ToolWindowPanelContent(pid)
+              }, (pid: string) => pid)
             }
             .width(this.rightPanelW)
             .height('100%')
@@ -10473,6 +10678,196 @@ if (this.settings.showBottomToolWindow) {
     .alignItems(HorizontalAlign.Start)
   }
 
+  /** 覆盖率工具窗（真功能）：Run with Coverage 的行覆盖率，按文件列出命中率 */
+  @Builder
+  CoverageContent() {
+    Column() {
+      Row() {
+        Text(this.coverageRunning ? '统计中…' : '运行并统计覆盖率')
+          .fontSize(11.5)
+          .fontFamily(PyFont.ui)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.buttonBg)
+          .onClick(() => {
+            this.runCoverage();
+          })
+        Text('隐藏')
+          .fontSize(11.5)
+          .fontFamily(PyFont.ui)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .margin({ left: 6 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.buttonBg)
+          .onClick(() => {
+            this.hideCoverage();
+          })
+        Text(`${this.coverageReport.files.length} 个文件`)
+          .fontSize(11)
+          .fontFamily(PyFont.ui)
+          .fontColor(this.theme.textSecondary)
+          .margin({ left: 8 })
+      }
+      .width('100%')
+      .margin({ bottom: 6 })
+
+      if (!this.coverageReport.ok) {
+        Text(this.coverageReport.message.length > 0 ? this.coverageReport.message
+          : '没有覆盖率数据：先在编辑器打开 .py，再点「运行并统计覆盖率」。\n绿竖条=命中行，红竖条=未命中行。')
+          .fontSize(11.5)
+          .fontFamily(PyFont.ui)
+          .fontColor(this.theme.textDisabled)
+          .width('100%')
+      } else {
+        Text(`目标 ${this.coverageReport.targetRel} · 退出码 ${this.coverageReport.exitCode}`)
+          .fontSize(11)
+          .fontFamily(PyFont.mono)
+          .fontColor(this.theme.textSecondary)
+          .width('100%')
+        Text(this.coverageTotalLine())
+          .fontSize(11.5)
+          .fontFamily(PyFont.ui)
+          .fontColor(this.theme.textPrimary)
+          .width('100%')
+          .margin({ bottom: 6 })
+        Scroll() {
+          Column() {
+            ForEach(this.coverageReport.files, (f: CoverageFileEntry) => {
+              Column() {
+                Row() {
+                  Text(f.rel)
+                    .fontSize(11.5)
+                    .fontFamily(PyFont.mono)
+                    .fontColor(this.theme.textPrimary)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .layoutWeight(1)
+                  Text(`${f.covered}/${f.total}  ${f.percent.toFixed(1)}%`)
+                    .fontSize(11)
+                    .fontFamily(PyFont.mono)
+                    .fontColor(f.percent >= 80 ? this.theme.success
+                      : (f.percent >= 50 ? this.theme.warning : this.theme.error))
+                }
+                .width('100%')
+                // 命中率条：绿=命中、红=未命中（PyCharm 覆盖率视图的经典条形）
+                Row() {
+                  Column()
+                    .width(`${f.percent}%`)
+                    .height(4)
+                    .backgroundColor(this.theme.success)
+                  Column()
+                    .layoutWeight(1)
+                    .height(4)
+                    .backgroundColor(this.theme.error)
+                }
+                .width('100%')
+                .margin({ top: 2 })
+              }
+              .width('100%')
+              .padding({ top: 3, bottom: 4 })
+              // 点文件 → 打开并定位到第一个未命中行（PyCharm 行为）
+              .onClick(() => {
+                this.openCoverageFile(f);
+              })
+            }, (f: CoverageFileEntry) => `${f.rel}_${f.covered}_${f.total}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .scrollBar(BarState.Auto)
+        .align(Alignment.TopStart)
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 端点工具窗（真功能）：静态扫描 Flask/FastAPI/Django 风格的路由定义 */
+  @Builder
+  EndpointsContent() {
+    Column() {
+      Row() {
+        Text(this.endpointScanning ? '扫描中…' : '重新扫描')
+          .fontSize(11.5)
+          .fontFamily(PyFont.ui)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.buttonBg)
+          .onClick(() => {
+            this.scanEndpoints();
+          })
+        Text(`共 ${this.endpointRows.length} 个端点`)
+          .fontSize(11)
+          .fontFamily(PyFont.ui)
+          .fontColor(this.theme.textSecondary)
+          .margin({ left: 8 })
+      }
+      .width('100%')
+      .margin({ bottom: 6 })
+
+      if (this.endpointRows.length === 0) {
+        Text('未检测到端点：本 IDE 静态扫描 Flask/FastAPI 的装饰器路由与 Django 的 path()/re_path()/url()。\n纯 Python 工程没有 Web 路由时这里保持为空，这是正确结果。')
+          .fontSize(11.5)
+          .fontFamily(PyFont.ui)
+          .fontColor(this.theme.textDisabled)
+          .width('100%')
+      } else {
+        Scroll() {
+          Column() {
+            ForEach(this.endpointRows, (e: EndpointEntry) => {
+              Row() {
+                Text(e.method)
+                  .fontSize(10.5)
+                  .fontFamily(PyFont.mono)
+                  .fontColor(this.theme.accent)
+                  .width(48)
+                Column() {
+                  Text(e.route)
+                    .fontSize(11.5)
+                    .fontFamily(PyFont.mono)
+                    .fontColor(this.theme.textPrimary)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .width('100%')
+                  Text(`${e.handler}    ${e.file}:${e.line}    ${e.framework}`)
+                    .fontSize(10.5)
+                    .fontFamily(PyFont.mono)
+                    .fontColor(this.theme.textSecondary)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .width('100%')
+                }
+                .layoutWeight(1)
+                .alignItems(HorizontalAlign.Start)
+              }
+              .width('100%')
+              .padding({ top: 3, bottom: 4 })
+              // 点端点 → 跳到定义行（PyCharm 行为）
+              .onClick(() => {
+                this.openEndpoint(e);
+              })
+            }, (e: EndpointEntry) => `${e.file}:${e.line}:${e.method}:${e.route}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .scrollBar(BarState.Auto)
+        .align(Alignment.TopStart)
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
 /** 编辑器内右键菜单（依据 PyCharm 的 EditorPopupMenu + FoldingGroup + Copy.Paste.Special） */
   @Builder
   EditorContextMenu() {
@@ -10740,7 +11135,13 @@ if (this.settings.showBottomToolWindow) {
   @Builder
   ToolWindowPanelContent(panelId: string) {
     Column() {
-      if (panelId === 'Bookmarks') {
+      if (panelId === 'Coverage') {
+        // 真实覆盖率内容（PyCharm 的 Coverage 工具窗）：不再是占位空态
+        this.CoverageContent()
+      } else if (panelId === 'Endpoints') {
+        // 真实端点内容（PyCharm 的 Endpoints 工具窗）：静态扫描 Web 路由
+        this.EndpointsContent()
+      } else if (panelId === 'Bookmarks') {
         // 真实书签内容（PyCharm 的 Bookmarks 工具窗）：不再是占位空态
         Row() {
           Text('＋ 添加当前行书签')

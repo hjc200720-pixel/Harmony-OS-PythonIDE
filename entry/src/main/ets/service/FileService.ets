@@ -210,6 +210,17 @@ export class FileService {
   }
 
   static writeText(path: string, content: string): void {
+    // 父目录不存在时 openSync 会直接失败。**首次安装**（沙箱里还没有工程目录树）时示例工程就要
+    // 写 demo_pkg/models.py 之类的深层文件，结果应用一启动就崩（真机/dev 模拟器都复现过）。
+    // 这里统一兜底：写文件前先保证父目录存在；建目录失败则交给下面的 open 报原始错误。
+    const slash: number = path.lastIndexOf('/');
+    if (slash > 0) {
+      try {
+        FileService.ensureDir(path.substring(0, slash));
+      } catch (e) {
+        FileService.log(`write parent mkdir failed ${path}`);
+      }
+    }
     try {
       const file = fs.openSync(path, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
       try {
@@ -405,6 +416,10 @@ export class FileService {
   /** 在沙箱项目目录里新建一个可直接运行的示例工程 */
   static createSampleProject(root: string): void {
     FileService.ensureDir(root);
+    // demo_pkg 与 demo_pkg/core 必须在写下面的 demo_pkg/*.py **之前**建好：
+    // 首次安装时沙箱里没有这两个目录，写 models.py 会失败并让应用启动即崩（模拟器上真实复现过）。
+    FileService.ensureDir(`${root}/demo_pkg`);
+    FileService.ensureDir(`${root}/demo_pkg/core`);
     const mainPy: string = `${root}/main.py`;
     // 示例工程升级：早期版本的 main.py 没有 import utils（缺少跨文件引用样本），发现即重写
     // 版本标记：老版本/被改脏的示例文件会缺少标记，直接重建（示例工程自愈）
@@ -535,6 +550,65 @@ export class FileService {
         ''
       ].join('\n'));
     }
+    // 端点演示：用内置最小路由类模拟 Flask/FastAPI 的装饰器风格。
+    // 设备里没有 Flask，端点工具窗靠**纯静态扫描**识别装饰器，所以这个示例既能被扫到，
+    // 也能直接运行（只打印路由表，不真的提供 HTTP 服务）。
+    const webRoutesPy: string = `${root}/demo_pkg/web_routes.py`;
+    if (!FileService.exists(webRoutesPy)) {
+      FileService.writeText(webRoutesPy, [
+        '"""端点演示：用内置最小路由类模拟 Flask / FastAPI 的装饰器风格。',
+        '',
+        '本文件不依赖任何第三方包（设备内的 CPython 没有 Flask），',
+        '「端点」工具窗靠静态分析识别这些装饰器；直接运行只会打印注册的路由。',
+        '"""',
+        '',
+        '',
+        'class MiniRouter:',
+        '    """只记录注册路由的最小路由类（演示用）。"""',
+        '',
+        '    def __init__(self) -> None:',
+        '        self.routes = []',
+        '',
+        '    def route(self, path, methods=None):',
+        '        def register(fn):',
+        '            self.routes.append((path, methods or ["GET"], fn.__name__))',
+        '            return fn',
+        '        return register',
+        '',
+        '    def get(self, path):',
+        '        return self.route(path, ["GET"])',
+        '',
+        '    def post(self, path):',
+        '        return self.route(path, ["POST"])',
+        '',
+        '    def delete(self, path):',
+        '        return self.route(path, ["DELETE"])',
+        '',
+        '',
+        'app = MiniRouter()',
+        '',
+        '',
+        '@app.route("/")',
+        'def index() -> str:',
+        '    return "index"',
+        '',
+        '',
+        '@app.route("/users", methods=["GET", "POST"])',
+        'def users() -> str:',
+        '    return "users"',
+        '',
+        '',
+        '@app.get("/health")',
+        'def health() -> str:',
+        '    return "ok"',
+        '',
+        '',
+        'if __name__ == "__main__":',
+        '    for item in app.routes:',
+        '        print(item)',
+        ''
+      ].join('\n'));
+    }
     const utilsPy: string = `${root}/utils.py`;
     if (!FileService.exists(utilsPy)) {
       FileService.writeText(utilsPy, [
@@ -559,16 +633,14 @@ export class FileService {
         '',
         '- `main.py`  入口示例',
         '- `utils.py` 可 import 的模块',
+        '- `demo_pkg/web_routes.py` 端点示例（模拟 Flask/FastAPI 装饰器，供「端点」工具窗静态扫描）',
         '',
         '> 该目录位于应用沙箱内，Python 运行时可原生读写，重启不丢失。',
         ''
       ].join('\n'));
     }
-    // 一个真实的包目录 demo_pkg/core：既能 import，也用来体现 PyCharm 的
-    // 「压缩中间目录」（Compact Middle Packages，默认开启）—— 该链会显示成一行 demo_pkg/core
-    // writeText 不会自动建父目录，先 ensureDir（否则 err=13900002 无此文件）
-    FileService.ensureDir(`${root}/demo_pkg`);
-    FileService.ensureDir(`${root}/demo_pkg/core`);
+    // demo_pkg / demo_pkg/core 已在函数开头创建（既能 import，也用来体现 PyCharm 的
+    // 「压缩中间目录」：该链会显示成一行 demo_pkg/core）
     const pkgInit: string = `${root}/demo_pkg/__init__.py`;
     if (!FileService.exists(pkgInit)) {
       FileService.writeText(pkgInit, [

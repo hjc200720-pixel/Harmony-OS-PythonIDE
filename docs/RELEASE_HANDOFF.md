@@ -137,8 +137,12 @@ hvigorw --no-daemon --mode module -p product=default -p buildMode=release assemb
 
 ## 六、我这边「自动做」还剩的可选项（你一句话我就继续）
 
-1. 把 6 个占位工具窗（覆盖率/端点/数据视图/Jupyter 变量/TODO/AI 聊天）逐个做成**真功能**：
-   - TODO 最容易做真（扫工程里的 TODO/FIXME 注释并列出、点击跳转）—— 建议先做这个
-   - Jupyter 变量 → 需要 Jupyter 会话，只能保持占位
+1. ~~把 6 个占位工具窗逐个做成真功能~~ —— 已完成 3 个：TODO（扫描 + 点击跳转）、
+   **覆盖率**（`sys.settrace` 逐行统计 + 工具窗百分比条形 + 编辑器绿/红竖条 + 「工程总覆盖率」汇总）、
+   **端点**（纯 ast 静态扫描 Flask/FastAPI/Django 路由，工具窗打开即扫描、点行跳转）；三项均经 2in1 模拟器真机验证。
+   剩下 3 个保持占位（能力前提不具备，不装成功）：
+   - 数据视图（SciView）→ 需要科学计算/绘图生态；
+   - Jupyter 变量 → 需要 Jupyter 会话；
+   - AI 聊天 → 需要云端模型（本应用坚持离线、不联网）。
 2. 继续补 PyCharm 对齐项（右栏 secondary 工具窗、绘图语义等）
 3. 应用内「检查更新 / 反馈」等上架常被要求的入口

@@ -1442,6 +1442,108 @@ ScopeViewPopupMenu 里可做的那几项（展开/折叠/跳到定义）。
 
 ### 0.82 ★ 跨文件重命名修复并完成往返验证（0.81 的债结清）
 
+### 0.95 ★ 覆盖率 + 端点：两个占位工具窗做成真功能（真机验证 + 抓到 2 个真缺陷）
+
+**背景**：`docs/RELEASE_HANDOFF.md` 第六节列的「6 个占位工具窗」里，覆盖率与端点是最有可能做成真功能的两块：
+设备内嵌 CPython 能做 `sys.settrace`；设备没有 Flask/Django，但端点可以**纯静态 ast 扫描**。两项都做成真功能，
+并在真机验证过程中抓到并修掉了 **2 个真缺陷**（一个是新功能的 UI 串味，一个是**首次安装即崩溃**的老 bug）。
+
+## 一、覆盖率（Coverage）—— 真功能
+
+| 项 | 做法 |
+|---|---|
+| 统计 | `service/CoverageService.ets` 里的 Python 脚本：`sys.settrace` + `threading.settrace` 记录行命中；`runpy.run_path(..., run_name='__main__')` 以 `__main__` 语义跑目标；finally 恢复 trace |
+| 可执行行 | `compile` 后递归 `co_consts` + `dis.findlinestarts` 收集行号集合（不靠猜） |
+| 范围 | 只统计工程内 .py（跳过 `.*` 目录 / `__pycache__` / `site-packages` / venv）；目标 print 输出照常进控制台，末尾一行「覆盖率：…」摘要 |
+| 报告 | JSON（ok/target/exit/message/files[{path,total,covered,percent,hit,missing}]）；目标异常 / `sys.exit` / 目标不存在都写 JSON，脚本自身不崩 |
+| 入口 | 「运行」菜单 →「运行当前文件并统计覆盖率(_C)」（PyCharm: Run 'x' with Coverage），跑完自动打开右侧「覆盖率」面板 |
+| 面板 | 「目标 main.py · 退出码 0」+「工程总覆盖率 x%（c/t 行）」+ 逐文件「命中/可执行 + 百分比 + 绿/红条形」；**本次跑到的文件排在前（高→低），完全没跑到的 0% 文件在后**；点文件跳到第一个未命中行 |
+| 编辑器 | CodeEditor 装订区新增 4vp 覆盖率竖条（绿=命中、红=未命中），与断点/书签/警示标分层；两个编辑器实例都接；切标签时自动刷新 |
+| 隐藏 | 面板「隐藏」= 清数据 + 清 gutter（PyCharm 的 Hide Coverage）|
+
+## 二、端点（Endpoints）—— 真功能
+
+- `service/EndpointService.ets` 的 Python 脚本纯 ast 扫描（**不 import 任何第三方框架**）：
+  `@x.route("/p"[, methods=[...]])`（Flask/Quart，多方法展开、无 methods 默认 GET）、
+  `@x.get/post/put/delete/patch/head/options("/p")`（FastAPI/Starlette 风格）、
+  Django 的 `path()/re_path()/url()`（要求 import django.urls 或存在 urlpatterns 赋值）。
+  拼接/变量 route 与注释里的假装饰器**不命中**（零误报设计）；输出 5 列 TAB 文本（方法/路由/文件:行/框架/handler）。
+- 面板：右侧「端点」工具窗，**打开即自动扫描**（`@Watch` on rightToolWindow，PyCharm 行为），按钮「重新扫描」；
+  行 = 方法 + 路由 + handler + 文件:行 + 框架，点行跳到定义。
+- 示例工程新增 `demo_pkg/web_routes.py`：用内置最小路由类模拟 Flask/FastAPI 装饰器（不依赖第三方包、可直接运行），
+  让端点工具窗有可演示数据；示例 README 同步说明。
+
+## 三、宿主侧验证（可复现）
+
+```
+scripts/verify-coverage.py   → 87 项检查 0 失败 PASS（跨文件精确覆盖 utils 66.7%/main 93.8%、异常、sys.exit、
+                               只统计工程内文件、schema、400 文件截断）
+scripts/verify-endpoints.py  → 9 个场景全 PASS（Flask/FastAPI/Django 精确行号、负例/拼接/变量路由不命中、
+                               中文、400 截断、文本契约、错误路径）
+脚本抽取后都在「设备等价搜索路径」下真跑：[空 site-packages, 工程内 python312.zip]，断言 ast/json 等来自 zip
+```
+
+## 四、真机验证（物理平板 HUAWEI MatePad 11.5 S / SLG-W50 · 2800×1840 · API 26）
+
+```
+✅ 运行菜单出现「运行当前文件并统计覆盖率(_C)」
+✅ 覆盖率面板：目标 main.py · 退出码 0 ｜ 工程总覆盖率 20.0%（20/100 行）
+   main.py 14/14 100.0%、utils.py 6/6 100.0% 排最前，其后 demo_pkg/* 的 0/2 0.0%…（排序修复生效）
+   状态栏「覆盖率统计完成：12 个文件（点列表可跳到未命中行）」
+✅ 换目标再跑（web_routes.py）：工程总覆盖率 24.0%（24/100 行），web_routes.py 24/29 82.8%
+✅ 编辑器 gutter：main.py 行号槽最左侧绿色竖条（命中行 1/3/6/9/10/15-20…）；
+   demo_pkg/models.py（0/16 0%）红色竖条 —— 绿/红两色都在真机截图里（final_19/20_*_crop.png）
+✅ 端点面板「打开即自动扫描」：未点任何按钮即出现「共 4 个端点」
+   GET  /        index    demo_pkg/web_routes.py:33   Web
+   GET  /users   users    demo_pkg/web_routes.py:38   Web
+   POST /users   users    demo_pkg/web_routes.py:38   Web
+   GET  /health  health   demo_pkg/web_routes.py:43   Web
+   状态栏「端点：4 个（静态扫描）」
+✅ 点 GET /health → 打开 web_routes.py，状态栏「已打开 web_routes.py:43」
+✅ 双向切换：覆盖率→端点（标题=端点、内容=端点，不串味）；端点→覆盖率（标题=覆盖率、内容/数据都在）
+```
+
+## 五、验证中抓到并修掉的 2 个真缺陷
+
+### 缺陷 1：右侧工具窗「标题与内容串味」（新功能暴露的 ArkUI 陷阱）
+
+- 现象（旧 HAP 截图 `_cache/device2/ep_03_panel.jpeg`）：从「覆盖率」切到「端点」后，**标题变「端点」、内容仍是覆盖率列表**。
+- 根因：`ToolWindowPanelContent(panelId)` 是 `@Builder`，**ArkUI 的 @Builder 按值传参不会随作用域状态刷新**；
+  两个工具窗 id 都非空时外层 `if (this.rightToolWindow.length > 0)` 分支不变 → 旧内容子树被复用。
+  这与本项目此前在「⋯ 按钮/标题串味」上踩到的坑同源（见 0.56 附近记录），这次是新功能复现。
+- 修法：右侧面板内容改为 `ForEach(this.rightPanelIds(), (pid) => this.ToolWindowPanelContent(pid), key=pid)` ——
+  **id 变化即销毁重建**，标题与内容永远同源；`twPanelId`/`rightToolWindow` 仍保持单一真源。
+- 复验：final_14（→端点不串味）、final_16（→覆盖率数据仍在）双向通过。
+
+### 缺陷 2：首次安装即崩溃（示例工程写文件早于建目录）—— 老 bug，本轮才被模拟器小白盒抓到
+
+- 现象：在 DevEco「MateBook Pro」2in1 模拟器上全新安装后，应用一启动即 JS 崩溃：
+  `write failed: .../PyProjects/示例工程/demo_pkg/models.py`。
+- 根因：`FileService.createSampleProject()` 先写 `demo_pkg/models.py`，之后才 `ensureDir(demo_pkg)`；
+  物理平板沙箱是历史版本留下的（目录早就存在）所以一直没暴露，**理论上任何全新安装的设备都会崩**。
+- 修法（两处，防同类问题复发）：① `createSampleProject` 开头先 `ensureDir(root + '/demo_pkg')` 与 `/demo_pkg/core`；
+  ② `FileService.writeText()` 统一兜底建父目录（写文件前 `ensureDir(dirname)`），这类崩溃不会再出现。
+- 复验（2in1 模拟器 · x86_64 · **真正清空的沙箱**）：`hdc uninstall` 后确认 `/data/app/.../com.harmonyide.python`
+  已不存在（= 真正的首次安装）→ 装新 HAP → 启动**不再崩溃**（faultlogger 里 00:15 之后**没有新增 jscrash**）；
+  应用自行创建出完整示例工程：`示例工程/{main.py, utils.py, README.md}` + `demo_pkg/{__init__, models, web_routes,
+  legacy, scratch, todo, undef}.py` + `demo_pkg/core/`，main.py 自动打开、状态栏「Python 运行时已就绪」、
+  类型栏「内嵌 [3.12.10]」。顺手在同一模拟器上跑覆盖率也通过：「工程总覆盖率 21.3%（20/94 行）」，
+  main.py 14/14、utils.py 6/6 排最前（全新沙箱的示例文件集合比平板少一个，11 个文件，属正常差异）。
+
+## 六、交付物
+
+- 新增：`entry/src/main/ets/service/CoverageService.ets`、`EndpointService.ets`、
+  `scripts/verify-coverage.py`、`scripts/verify-endpoints.py`、`scripts/device/*`（模拟器/真机验证脚本）
+- 修改：`Index.ets`（两工具窗内容 + 运行菜单 + gutter 数据流 + 面板重建修复）、`CodeEditor.ets`（覆盖率 gutter）、
+  `MenuBarView.ets`（Run with Coverage 菜单项）、`FileService.ets`（示例工程演示端点 + 首次安装崩溃修复）
+- 构建：BUILD SUCCESSFUL，`entry-default-signed.hap` 29.35 MiB；`scripts/verify-hap.py` PASS
+
+**教训（第 21 条）**：**新功能要放到「全新沙箱」里装一遍** —— 这个崩溃在用了很久的设备上永远不会出现，
+是 2in1 模拟器的干净沙箱把它抓出来的。开发机上的历史状态会掩盖「首次运行路径」的缺陷。
+
+**教训（第 22 条）**：ArkUI 里凡是「同一个 @Builder 换参数」的场景，都要问一句「参数变化会触发重建吗」；
+不可靠时就用 `ForEach + key` 或直接内联 `if` 链，别赌框架行为。
+
 ### 0.94 ★ TODO 工具窗：从「列表只读」补成「可点击跳转」（真机验证）
 
 **核查结论**：TODO 工具窗**本来就是真功能**（`scanTodo()` 递归扫工程里的 TODO/FIXME/XXX，`TodoContent()` 渲染列表 +「重新扫描」），

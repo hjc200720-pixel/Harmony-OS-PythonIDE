@@ -153,6 +153,10 @@ export struct CodeEditor {
   @Prop @Watch('onBreakpointsChanged') breakpoints: number[] = [];
   /** 检查问题所在行（gutter 上显示警示标）*/
   @Prop warnLines: number[] = [];
+  /** 覆盖率：命中行（gutter 最左缘绿色竖条，对应 PyCharm 的 coverage line marker）*/
+  @Prop coverHitLines: number[] = [];
+  /** 覆盖率：未命中行（gutter 最左缘红色竖条）*/
+  @Prop coverMissLines: number[] = [];
   /** 书签所在行（gutter 上显示蓝色小旗）*/
   @Prop bookmarkLines: number[] = [];
   /** 调试暂停所在行（1-based，0 表示没有暂停） */
@@ -1084,13 +1088,22 @@ export struct CodeEditor {
           Column() {
             ForEach(this.lines, (line: LineRender, index: number) => {
               Row() {
+                // 覆盖率竖条：绿=命中、红=未命中（PyCharm 的覆盖率标记画在装订区最左缘，
+                // 与断点/书签/警示标这些「行内标记」分开，所以单独占一条 4vp 竖条）
+                Column()
+                  .width(4)
+                  .height('100%')
+                  .backgroundColor(this.coverHitLines.indexOf(index + 1) >= 0
+                    ? this.theme.success
+                    : (this.coverMissLines.indexOf(index + 1) >= 0
+                      ? this.theme.error : Color.Transparent))
                 if (this.showLineNumbers) {
                   Text(`${index + 1}`)
                     .fontSize(this.fontSize - 1)
                     .fontFamily(PyFont.mono)
                     .fontColor(this.cursorLine === index + 1 ? this.theme.gutterActiveFg : this.theme.gutterFg)
                     .textAlign(TextAlign.End)
-                    .width(this.gutterWidth - 20)
+                    .width(this.gutterWidth - 24)
                 }
                 // 断点标记（点击切换）；没有断点的当前行显示「意图操作」灯泡（PyCharm 同款）
                 Stack() {
@@ -1139,6 +1152,8 @@ export struct CodeEditor {
               + `_${this.breakpoints.indexOf(index + 1) >= 0 ? 1 : 0}`
               + `_${this.warnLines.indexOf(index + 1) >= 0 ? 1 : 0}`
               + `_${this.bookmarkLines.indexOf(index + 1) >= 0 ? 1 : 0}`
+              + `_${this.coverHitLines.indexOf(index + 1) >= 0 ? 1 : 0}`
+              + `_${this.coverMissLines.indexOf(index + 1) >= 0 ? 1 : 0}`
               + `_${this.cursorLine === index + 1 ? 1 : 0}`
               + `_${this.debugLine === index + 1 ? 1 : 0}`)
           }

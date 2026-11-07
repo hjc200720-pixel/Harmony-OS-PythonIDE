@@ -15,3 +15,5 @@
 /entry/src/main/resources/rawfile/python/*.zip
 /entry/src/main/cpp/thirdparty/*/libpython*.a
 /entry/src/main/cpp/thirdparty/*/include/
+# 真机验证证据（截图 / dumpLayout / 日志）：体积大且是过程产物，不进仓库
+/_cache/

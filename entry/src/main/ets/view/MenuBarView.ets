@@ -315,6 +315,7 @@ function buildRunMenu(): PyMenuItem[] {
   // 依据 <group id="RunMenu"> 与 <group id="DebugMainMenu"> 原文
   return [
     new PyMenuItem('run.run', '运行', 'Shift+F10'),
+    new PyMenuItem('run.coverage', '运行当前文件并统计覆盖率(_C)', NO_SHORTCUT),
     new PyMenuItem('run.debug', '调试', 'Shift+F9'),
     new PyMenuItem('', '', NO_SHORTCUT),
     new PyMenuItem('run.config', '编辑配置(_R)…', 'Alt+Shift+F10'),

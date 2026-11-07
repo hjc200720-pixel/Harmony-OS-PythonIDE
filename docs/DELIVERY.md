@@ -7,7 +7,7 @@
 
 | 项 | 值 |
 |---|---|
-| 设备 | HarmonyOS 真机（示例为 5VXUN25A11G01767，2in1 形态，2800×1840 @2.5x）|
+| 设备 | 物理平板 HUAWEI MatePad 11.5 S（SLG-W50，2800×1840，HarmonyOS 7.0.0.111 / API 26）；2in1 形态另用 DevEco「MateBook Pro」模拟器（3120×2080 @304，HarmonyOS 7.0.0）验证 |
 | 应用 | 包名 com.harmonyide.python，Ability EntryAbility |
 | Python | 随包内置 CPython 3.12.10（标准库以 zip 形式随包，直接 zipimport）|
 | 构建 | DevEco hvigor（assembleHap），含 C++ 桥接层编译 |
@@ -56,6 +56,12 @@
 | 调试器 | 断点 · 真正挂起 · 变量 · 调用栈 · 帧跳转 · 继续/单步/步入/步出 · **Evaluate 求值** · **Watches 监视** |
 | 编辑器 | 多窗格（双方向拆分、只读镜像、持久化、拖拽 SplitChooser）· 差异比较 · 本地历史 · 折叠 · 断点 gutter · 问题 gutter |
 
+### 2.6 覆盖率与端点（本轮新增，均经真机验证）
+| 能力 | 说明 |
+|---|---|
+| 代码覆盖率 | 「运行」菜单→「运行当前文件并统计覆盖率」：内嵌解释器 `sys.settrace` 逐行统计**工程内** .py（含被 import 的模块）；工具窗显示「目标/退出码」「工程总覆盖率 x%（c/t 行）」与逐文件百分比条形，本次跑到的文件排在前面；点文件跳到第一个未命中行（没有未命中则第 1 行）；编辑器装订区绿竖条=命中、红竖条=未命中；「隐藏」清数据与标记 |
+| 端点（Web 路由）| 纯 `ast` 静态扫描（设备内没有 Flask/Django，故不 import 框架）：Flask/Quart `@x.route`（methods 展开、默认 GET）、FastAPI/Starlette `@x.get/post/... `、Django `path()/re_path()/url()`；工具窗打开即扫描，点行跳到定义；拼接/变量路由不误报 |
+
 ## 3. 验证方法（可复现）
 
 每次交付都要求**双断言**：组件级证据 + 人类可读证据。
@@ -68,7 +74,7 @@
 | 截图 | `snapshot_display` 存 JPEG，人工/模型看图确认视觉结果 |
 | 状态栏断言 | 每次动作的状态提示（如「检查完成：7 条」「已插入补全：utils.fib」）|
 
-验证脚本位于 `_cache/device/*.py`（每次运行生成唯一文件名，避免缓存干扰）。
+验证脚本：`scripts/device/start-emulator.ps1`（幂等启动 2in1 模拟器）+ `scripts/device/device.ps1`（install/start/dump/shot/click 子命令）；证据落在 `_cache/device2/`（已进 .gitignore）。
 
 ## 4. 已知边界（如实列出）
 
@@ -77,7 +83,11 @@
 - **git**：设备无 git 可执行文件，VCS 相关只做到「变更时间线」（本地历史聚合），未做提交/分支/推送；
 - **外部系统**：Maven/Gradle 式构建系统集成未做（设备无对应工具链），只做任务执行与依赖清单；
 - **补全**：为文件/模块级（非类型推断），不支持 `obj.` 成员推断；
-- **作用域视图菜单**：ScopeViewPopupMenu 的 41 项菜单（查找用法/重构/按作用域分组）依赖语义索引，未实现。
+- **作用域视图菜单**：ScopeViewPopupMenu 的 41 项菜单（查找用法/重构/按作用域分组）依赖语义索引，未实现；
+- **覆盖率**：数据只保留在本次应用会话内（未做落盘恢复）；统计会显著拖慢执行，所以只在手动点「运行并统计覆盖率」时挂 `sys.settrace`；
+  目标自行调用 `sys.settrace` 或 `os._exit()` 属未覆盖的极端情况；
+- **端点**：纯静态扫描 —— 不解析 `include()`/蓝图（Blueprint `url_prefix`、`APIRouter(prefix=...)`）前缀拼接，
+  `methods=[变量]` 的直接跳过（宁缺勿错），`TotalRoute` 等自定义注册方式不在识别范围。
 
 ## 5. 架构要点
 
@@ -90,5 +100,5 @@
 
 | 文档 | 内容 |
 |---|---|
-| [FEATURE_AUDIT.md](FEATURE_AUDIT.md) | 逐项审计（0.1–0.90）：每项含 PyCharm 文件依据、真机证据、未做项、踩坑教训（19 条）|
+| [FEATURE_AUDIT.md](FEATURE_AUDIT.md) | 逐项审计（0.1–0.95）：每项含 PyCharm 文件依据、真机证据、未做项、踩坑教训（20+ 条）|
 | `../_cache/pycharm/FULL_GAP_REPORT.md` | PyCharm 安装包解析出的 595 组 / 2253 条菜单项与实现状态对比 |
