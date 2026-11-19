@@ -108,6 +108,7 @@ RESULT: PASS (6 scenarios)
 | 断点调试 | ✅（行级） | 行断点命中即暂停，可**继续/单步/停止**；暂停时显示局部变量（含 repr）与调用栈；编辑器高亮暂停行并自动定位。调试钩子语义已用`scripts/verify-debug-hook.py` 在宿主上 6/6 验证 |
 | 代码覆盖率 | ✅ | 「运行」菜单 →「运行当前文件并统计覆盖率」：用内嵌解释器的 `sys.settrace` 逐行统计**工程内** .py 的执行情况（含它 import 的模块），覆盖率工具窗按文件列出「命中/可执行行」与百分比条形，点文件跳到第一个未命中行；编辑器装订区绿竖条=命中行、红竖条=未命中行。统计脚本的语义已用 `scripts/verify-coverage.py` 在宿主上 87 项检查全通过（含跨文件精确覆盖、异常/sys.exit、只统计工程内文件、400 文件截断） |
 | 端点（Endpoints） | ✅ | 静态 `ast` 扫描 Flask/Quart `@x.route(...)`、FastAPI/Starlette `@x.get/post/...`、Django `path()/re_path()/url()`，工具窗按「方法 + 路由 + 文件:行 + 框架」列出并支持点击跳转；零误报设计（拼接/变量路由不命中）。规则已用 `scripts/verify-endpoints.py` 在宿主上 9 个场景全通过 |
+| 数据视图（SciView） | ✅ | 工程内 **CSV / TSV / JSON** 的表格预览：工具窗打开即列出数据文件并自动预览第一个，点文件切换；RFC4180 引号/换行、分隔符自动探测、JSON 对象数组/数组的数组/键值表四种形态、行列裁剪与「已截断」提示、横向+纵向滚动、行号列。解析器 `scripts/verify-datapreview.mjs` 在宿主 Node 上跑全部用例通过 |
 | 调试增强（条件断点/步入步出/watch 表达式） | ❌ | 路线图 |
 | 自动补全 / 跳转定义 / 重构 | ❌ | 路线图 |
 | 完整 shell 终端 | ❌ | 当前只做白名单命令，路线图 |
@@ -139,6 +140,7 @@ HarmonyPyIDE/
 │     │  │  ├─ SettingsService.ets           设置持久化（首选项数据库）
 │     │  │  ├─ CoverageService.ets           覆盖率：settrace 统计脚本 + 报告解析
 │     │  │  ├─ EndpointService.ets           端点：Web 路由静态 ast 扫描 + 行解析
+│     │  │  ├─ DataPreviewService.ets        数据视图：CSV/TSV/JSON → 表格（纯解析，可宿主测）
 │     │  │  └─ PyHighlighter.ets             Python 词法着色器
 │     │  ├─ model/Models.ets                 领域模型
 │     │  └─ common/Theme.ets                 设计令牌（两套主题配色）
@@ -161,6 +163,7 @@ HarmonyPyIDE/
 │  ├─ verify-debug-hook.py                   从 napi_init.cpp 抽取真实调试钩子做语义验证
 │  ├─ verify-coverage.py                     抽取覆盖率脚本，在宿主按设备搜索路径跑 6 场景
 │  ├─ verify-endpoints.py                    抽取端点扫描脚本，宿主验证规则/负例/零误报
+│  ├─ verify-datapreview.mjs                 数据视图解析器：Node strip-types 直接跑全部用例
 │  └─ device/                                模拟器真机验证脚本（启动/安装/dump/截图/点击）
 └─ docs/
    ├─ ARCHITECTURE.md                         架构与关键取舍
@@ -241,6 +244,8 @@ hdc install -r entry\build\default\outputs\default\entry-default-signed.hap
     数据只保留在本次应用会话内（未做落盘恢复）；目标自行调用 `sys.settrace` 或 `os._exit()` 属极端未覆盖情况。
 12. **端点是纯静态扫描**：不解析 `include()` / 蓝图前缀（`Blueprint(url_prefix=...)`、`APIRouter(prefix=...)`），
     `methods=[变量]` 的路由直接跳过（宁缺勿错）；如需精确的框架感知能力，需在设备内装对应框架。
+13. **数据视图是表格预览，不是 PyCharm 的绘图/变量面板**：只读工程内 `.csv/.tsv/.tab/.json`，单次最多显示 120 行、40 列
+    （超出提示「已截断」），JSON 用内置只读解析器（嵌套深度上限 200，防栈溢出）；不支持 matplotlib 图、DataFrame 对象或运行期变量。
 
 ## 七、文档
 

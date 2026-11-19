@@ -33,6 +33,12 @@
    工具窗打开即扫描，按「方法 + 路由 + handler + 文件:行 + 框架」列出并可点击跳转；拼接/变量路由不误报。
    规则宿主验证：`scripts/verify-endpoints.py`（9 个场景）。
 
+0.5 ~~**数据视图（SciView）工具窗**~~ ✅ **已完成并真机验证**
+   把占位的 SciView 做成**工程内数据文件的表格预览**：CSV/TSV/JSON（RFC4180 引号/换行、分隔符自动探测、
+   JSON 对象数组/数组的数组/键值表），工具窗打开即列文件并自动预览第一个，行列裁剪 +「已截断」提示，
+   横向+纵向滚动、行号列；示例工程带 `data_sample.csv` / `data_sample.json`。
+   解析器宿主验证：`scripts/verify-datapreview.mjs`（Node strip-types 直跑全部用例）。
+
 ## P0 —— 补齐"IDE 之所以是 IDE"的核心能力
 
 0.2 **首次上机验收**（当前最大的未知量）

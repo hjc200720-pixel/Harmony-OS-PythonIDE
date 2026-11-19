@@ -32,6 +32,7 @@ import { languages, languageLabel, languageOf, LangDef } from '../service/Langua
 import { TerminalService, DirWatcher } from '../service/TerminalService';
 import { CoverageFileEntry, CoverageReport, COVERAGE_PY_SCRIPT, parseCoverageReport } from '../service/CoverageService';
 import { EndpointEntry, ENDPOINTS_PY_SCRIPT, parseEndpointRows } from '../service/EndpointService';
+import { DataTable, isDataFileName, parseDataTable } from '../service/DataPreviewService';
 import { WelcomeView } from '../view/WelcomeView';
 import { IconChevronRight, IconClose, IconFolder, IconPython, IconSettings, IconTerminal, IconAsset, IconMoreVertical } from '../view/IdeIcons';
 
@@ -157,7 +158,7 @@ function toolWindows(): ToolWindowInfo[] {
     new ToolWindowInfo('Python Console', 'Python 控制台', 'right', true),
     new ToolWindowInfo('Coverage', '覆盖率', 'right', true),
     new ToolWindowInfo('Endpoints', '端点', 'right', true),
-    new ToolWindowInfo('SciView', '数据视图', 'right', false),
+    new ToolWindowInfo('SciView', '数据视图', 'right', true),
     new ToolWindowInfo('Jupyter Variables', 'Jupyter 变量', 'right', false),
     new ToolWindowInfo('HfCacheToolWindow', 'Hugging Face', 'right', false),
     new ToolWindowInfo('Remote Host', '远程主机', 'right', false),
@@ -745,6 +746,16 @@ struct Index {
   /** 静态扫描出的 Web 路由 */
   @State endpointRows: EndpointEntry[] = [];
   @State endpointScanning: boolean = false;
+
+  // ── 数据视图（SciView）：工程内 CSV/TSV/JSON 的表格预览 ──────────────────
+  /** 工程内可预览的数据文件（相对工程根路径）*/
+  @State dataFiles: string[] = [];
+  /** 最近一次预览出的表格 */
+  @State dataTable: DataTable = new DataTable();
+  /** 当前预览的数据文件（相对路径，空串表示还没选）*/
+  @State dataPreviewRel: string = '';
+  /** 数据文件读取/解析进行中（防重入）*/
+  @State dataLoading: boolean = false;
 
   /** 问题工具窗的行 */
   @State problemRows: string[] = [];
@@ -3014,13 +3025,105 @@ struct Index {
   }
 
   /**
-   * 右侧面板切到「端点」时自动扫一次（PyCharm 的 Endpoints 工具窗打开即扫描）。
-   * 只在还没有结果时自动扫，避免每次切面板都重扫覆盖用户刚看的结果。
+   * 右侧面板切换时的副作用：
+   *  · 端点：打开即扫一次（PyCharm 的 Endpoints 工具窗行为），已有结果不重扫；
+   *  · 数据视图：打开即列出工程内数据文件，并自动预览第一个（PyCharm 的 SciView 行为）。
    */
   private onRightToolWindowChanged(): void {
     if (this.rightToolWindow === 'Endpoints' && this.endpointRows.length === 0 && !this.endpointScanning) {
       this.scanEndpoints();
     }
+    if (this.rightToolWindow === 'SciView' && !this.dataLoading) {
+      if (this.dataFiles.length === 0) {
+        this.refreshDataFiles();
+      }
+      if (!this.dataTable.ok && this.dataFiles.length > 0) {
+        this.previewDataFile(this.dataFiles[0]);
+      } else if (this.dataTable.ok) {
+        // 表格还在（上次预览没被清）：把「文件 · 行×列」写回状态栏，
+        // 否则从覆盖率/端点切回来时会保留上一个面板的文案（真机反馈的瑕疵）
+        const name: string = this.dataPreviewRel.substring(this.dataPreviewRel.lastIndexOf('/') + 1);
+        this.setStatus(`数据视图：${name} · ${this.dataTable.rows.length} 行 × ${this.dataTable.columns} 列`);
+      }
+    }
+  }
+
+  // ── 数据视图（SciView）：工程内 CSV/TSV/JSON → 表格 ───────────────────────
+
+  /** 递归收集工程内的数据文件（CSV/TSV/JSON），relPrefix 为相对工程根的目录前缀 */
+  private collectDataFiles(dir: string, relPrefix: string, depth: number, out: string[]): void {
+    if (depth > 4 || out.length >= 80) {
+      return;
+    }
+    const nodes: FileNode[] = FileService.listDir(dir, 1);
+    for (const n of nodes) {
+      if (n.isDir) {
+        if (!isExcludedDirName(n.name)) {
+          const childRel: string = relPrefix.length > 0 ? `${relPrefix}/${n.name}` : n.name;
+          this.collectDataFiles(n.path, childRel, depth + 1, out);
+        }
+      } else if (isDataFileName(n.name)) {
+        out.push(relPrefix.length > 0 ? `${relPrefix}/${n.name}` : n.name);
+      }
+    }
+  }
+
+  /** 扫描工程内的数据文件，填进「数据视图」面板 */
+  private refreshDataFiles(): void {
+    const found: string[] = [];
+    try {
+      this.collectDataFiles(this.projectRoot, '', 0, found);
+    } catch (err) {
+      FileService.log(`refreshDataFiles 失败: ${JSON.stringify(err)}`);
+    }
+    found.sort((a: string, b: string) => a.toLowerCase() < b.toLowerCase() ? -1 : 1);
+    this.dataFiles = found.slice(0, 80);
+    this.setStatus(`数据视图：工程内 ${this.dataFiles.length} 个数据文件`);
+  }
+
+  /** 预览一个数据文件（rel 为相对工程根路径）*/
+  private previewDataFile(rel: string): void {
+    if (rel.length === 0) {
+      return;
+    }
+    this.dataLoading = true;
+    try {
+      const abs: string = `${this.projectRoot}/${rel}`;
+      const name: string = rel.substring(rel.lastIndexOf('/') + 1);
+      const text: string = FileService.readText(abs);
+      const table: DataTable = parseDataTable(text, name, 120);
+      this.dataTable = table;
+      this.dataPreviewRel = rel;
+      if (table.ok) {
+        const cut: string = table.truncated ? '（已截断）' : '';
+        this.setStatus(`数据视图：${name} · ${table.rows.length} 行 × ${table.columns} 列${cut}`);
+      } else {
+        this.setStatus(`数据视图：${name} 无法预览 —— ${table.message}`);
+      }
+    } catch (err) {
+      this.setStatus(`数据视图：读取失败 ${JSON.stringify(err)}`);
+    } finally {
+      this.dataLoading = false;
+    }
+  }
+
+  /** 当前编辑器文件若是数据文件则直接预览（SciView 的「看当前数据」入口）*/
+  private previewCurrentFileAsData(): void {
+    const rel: string = this.editorRelPath();
+    const name: string = rel.substring(rel.lastIndexOf('/') + 1);
+    if (rel.length === 0 || !isDataFileName(name)) {
+      this.showToast('当前文件不是数据文件（支持 .csv/.tsv/.tab/.json）');
+      return;
+    }
+    if (this.dataFiles.indexOf(rel) < 0) {
+      this.dataFiles = [rel].concat(this.dataFiles);
+    }
+    this.previewDataFile(rel);
+  }
+
+  /** 表格总宽度（行号列 32vp + 每列 110vp），供横向滚动的内容定宽 */
+  private tableWidth(): number {
+    return 32 + this.dataTable.columns * 110;
   }
 
   /** 作用域视图（ScopeView）：把当前文件交给运行时用 ast 真解析，结果写文件后读回 */
@@ -8236,7 +8339,10 @@ struct Index {
                   .height(22)
                   .textAlign(TextAlign.Center)
                   .onClick(() => {
+                    // 先取标题再清空：关闭后状态栏给一句反馈（真机反馈原来点了 − 没有任何提示）
+                    const closedLabel: string = this.toolWindowLabel(this.rightToolWindow);
                     this.rightToolWindow = '';
+                    this.setStatus(`${closedLabel}：已关闭`);
                   })
               }
               .width('100%')
@@ -8258,9 +8364,12 @@ struct Index {
             // 右侧面板也是圆角小岛
             .borderRadius(this.theme.islandArc)
             .clip(true)
+            // 右缘必须让出「右竖条」的宽度：右竖条是绝对定位覆盖在窗口最右的（宽 rightStripW），
+            // 面板若只留 islandGap 就会伸到竖条下面 —— 真机实测表格最后一列被 数据库/Gradle/绘图 图标压住，
+            // 标题栏的 − / ⋮ 也被竖条吃掉（数据视图加表格后才暴露）。
             .margin({
               top: this.theme.islandGap,
-              right: this.theme.islandGap,
+              right: this.rightStripW + this.theme.islandGap,
               bottom: this.theme.islandGap
             })
           }
@@ -10593,9 +10702,14 @@ if (this.settings.showBottomToolWindow) {
     }
     // 右锚点工具窗 → 右侧内嵌面板（PyCharm 行为）；再点一次关闭
     if (w.anchor === 'right') {
+      const opening: boolean = this.rightToolWindow !== w.id;
       this.twPanelId = w.id;
-      this.rightToolWindow = this.rightToolWindow === w.id ? '' : w.id;
-      this.setStatus(`${w.label}：${this.rightToolWindow.length > 0 ? '已在右侧打开面板' : '已关闭'}`);
+      this.rightToolWindow = opening ? w.id : '';
+      // 数据视图打开时 @Watch 会同步「刷新列表 + 自动预览」，状态栏消息由那条流程写（行×列）；
+      // 这里再用通用文案覆盖就会把更有用的信息盖掉（真机反馈的实际体验瑕疵）。
+      if (!(opening && w.id === 'SciView')) {
+        this.setStatus(`${w.label}：${opening ? '已在右侧打开面板' : '已关闭'}`);
+      }
       return;
     }
     if (w.id === 'Bookmarks') {
@@ -10861,6 +10975,145 @@ if (this.settings.showBottomToolWindow) {
         .width('100%')
         .scrollBar(BarState.Auto)
         .align(Alignment.TopStart)
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 数据视图（SciView）工具窗（真功能）：工程内 CSV/TSV/JSON → 表格预览 */
+  @Builder
+  SciViewContent() {
+    Column() {
+      Row() {
+        Text('刷新')
+          .fontSize(11.5)
+          .fontFamily(PyFont.ui)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.buttonBg)
+          .onClick(() => {
+            this.refreshDataFiles();
+          })
+        Text('预览当前文件')
+          .fontSize(11.5)
+          .fontFamily(PyFont.ui)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .margin({ left: 6 })
+          .borderRadius(4)
+          .backgroundColor(this.theme.buttonBg)
+          .onClick(() => {
+            this.previewCurrentFileAsData();
+          })
+        Text(this.dataLoading ? '读取中…' : `${this.dataFiles.length} 个数据文件`)
+          .fontSize(11)
+          .fontFamily(PyFont.ui)
+          .fontColor(this.theme.textSecondary)
+          .margin({ left: 8 })
+      }
+      .width('100%')
+      .margin({ bottom: 6 })
+
+      if (this.dataFiles.length > 0) {
+        Scroll() {
+          Column() {
+            ForEach(this.dataFiles, (rel: string) => {
+              Text(rel)
+                .fontSize(11)
+                .fontFamily(PyFont.mono)
+                .fontColor(rel === this.dataPreviewRel ? this.theme.textPrimary : this.theme.textSecondary)
+                .width('100%')
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+                .borderRadius(3)
+                .backgroundColor(rel === this.dataPreviewRel ? this.theme.selectedBg : Color.Transparent)
+                .onClick(() => {
+                  this.previewDataFile(rel);
+                })
+            }, (rel: string) => `df_${rel}_${rel === this.dataPreviewRel ? 1 : 0}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 110 })
+        .scrollBar(BarState.Auto)
+        .margin({ bottom: 6 })
+      }
+
+      if (this.dataTable.ok) {
+        Text(`${this.dataTable.source} · ${this.dataTable.rows.length} 行 × ${this.dataTable.columns} 列${this.dataTable.truncated ? ' · 已截断' : ''}`)
+          .fontSize(11)
+          .fontFamily(PyFont.ui)
+          .fontColor(this.theme.textSecondary)
+          .width('100%')
+          .margin({ bottom: 4 })
+        // 纵向滚动 + 内层横向滚动：列多时表格可以左右拖（两层 Scroll 方向不同，ArkUI 允许嵌套）
+        Scroll() {
+          Scroll() {
+            Column() {
+              Row() {
+                Text('#')
+                  .fontSize(10.5)
+                  .fontFamily(PyFont.mono)
+                  .fontColor(this.theme.textSecondary)
+                  .width(32)
+                ForEach(this.dataTable.headers, (h: string) => {
+                  Text(h.length > 0 ? h : ' ')
+                    .fontSize(10.5)
+                    .fontFamily(PyFont.ui)
+                    .fontColor(this.theme.textPrimary)
+                    .width(110)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                }, (h: string, i: number) => `dh_${i}_${h}`)
+              }
+              .width(this.tableWidth())
+              .padding({ top: 3, bottom: 3 })
+              .backgroundColor(this.theme.panelBgAlt)
+              ForEach(this.dataTable.rows, (row: string[], ri: number) => {
+                Row() {
+                  Text(`${ri + 1}`)
+                    .fontSize(10.5)
+                    .fontFamily(PyFont.mono)
+                    .fontColor(this.theme.textDisabled)
+                    .width(32)
+                  ForEach(row, (cell: string, ci: number) => {
+                    Text(cell.length > 0 ? cell : ' ')
+                      .fontSize(10.5)
+                      .fontFamily(PyFont.mono)
+                      .fontColor(this.theme.textPrimary)
+                      .width(110)
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  }, (cell: string, ci: number) => `dc_${ri}_${ci}_${cell.length}`)
+                }
+                .width(this.tableWidth())
+                .padding({ top: 2, bottom: 2 })
+                .backgroundColor(ri % 2 === 1 ? this.theme.hoverBg : Color.Transparent)
+              }, (row: string[], ri: number) => `dr_${ri}_${row.length}`)
+            }
+            .alignItems(HorizontalAlign.Start)
+          }
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Auto)
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .scrollBar(BarState.Auto)
+        .align(Alignment.TopStart)
+      } else {
+        Text(this.dataTable.message.length > 0 ? this.dataTable.message
+          : (this.dataFiles.length > 0 ? '点上面的数据文件预览表格（支持 CSV / TSV / JSON）'
+            : '工程内没有 .csv / .tsv / .json 数据文件；也可以打开数据文件后点「预览当前文件」。'))
+          .fontSize(11.5)
+          .fontFamily(PyFont.ui)
+          .fontColor(this.theme.textDisabled)
+          .width('100%')
       }
     }
     .width('100%')
@@ -11141,6 +11394,9 @@ if (this.settings.showBottomToolWindow) {
       } else if (panelId === 'Endpoints') {
         // 真实端点内容（PyCharm 的 Endpoints 工具窗）：静态扫描 Web 路由
         this.EndpointsContent()
+      } else if (panelId === 'SciView') {
+        // 真实数据视图（PyCharm 的 SciView）：工程内 CSV/TSV/JSON 的表格预览
+        this.SciViewContent()
       } else if (panelId === 'Bookmarks') {
         // 真实书签内容（PyCharm 的 Bookmarks 工具窗）：不再是占位空态
         Row() {

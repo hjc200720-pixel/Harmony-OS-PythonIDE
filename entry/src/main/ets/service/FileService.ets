@@ -609,6 +609,31 @@ export class FileService {
         ''
       ].join('\n'));
     }
+    // 数据视图（SciView）演示数据：CSV 与 JSON 各一份，工具窗把它们渲染成表格。
+    // CSV 里故意放一行带引号逗号的姓名（"赵六, Jr."），用来体现 RFC4180 引号解析。
+    const csvSample: string = `${root}/data_sample.csv`;
+    if (!FileService.exists(csvSample)) {
+      FileService.writeText(csvSample, [
+        '姓名,科目,分数,日期',
+        '张三,Python,92,2026-11-01',
+        '李四,Python,85,2026-11-02',
+        '王五,数据结构,78,2026-11-03',
+        '"赵六, Jr.",操作系统,88,2026-11-04',
+        ''
+      ].join('\n'));
+    }
+    const jsonSample: string = `${root}/data_sample.json`;
+    if (!FileService.exists(jsonSample)) {
+      FileService.writeText(jsonSample, [
+        '[',
+        '  {"name": "张三", "score": 92, "passed": true},',
+        '  {"name": "李四", "score": 85, "passed": true},',
+        '  {"name": "王五", "score": 58, "passed": false},',
+        '  {"name": "赵六", "score": 76, "passed": true}',
+        ']',
+        ''
+      ].join('\n'));
+    }
     const utilsPy: string = `${root}/utils.py`;
     if (!FileService.exists(utilsPy)) {
       FileService.writeText(utilsPy, [
@@ -634,6 +659,7 @@ export class FileService {
         '- `main.py`  入口示例',
         '- `utils.py` 可 import 的模块',
         '- `demo_pkg/web_routes.py` 端点示例（模拟 Flask/FastAPI 装饰器，供「端点」工具窗静态扫描）',
+        '- `data_sample.csv` / `data_sample.json` 数据示例（供「数据视图」工具窗的表格预览）',
         '',
         '> 该目录位于应用沙箱内，Python 运行时可原生读写，重启不丢失。',
         ''
